@@ -10,12 +10,12 @@ test-backend:
 	cd backend && $(BACKEND_TEST_ENV) .venv/bin/pytest
 
 test-frontend:
-	cd frontend && npm install
-	cd frontend && $(FRONTEND_TEST_ENV) npm run test:coverage
+	cd frontend && bun install --frozen-lockfile
+	cd frontend && $(FRONTEND_TEST_ENV) bun run test:coverage
 
 test-e2e:
-	cd frontend && npm install
-	cd frontend && $(FRONTEND_TEST_ENV) npx playwright install --with-deps
-	cd frontend && $(FRONTEND_TEST_ENV) npm run test:e2e
+	cd frontend && bun install --frozen-lockfile
+	cd frontend && $(FRONTEND_TEST_ENV) bunx playwright install --with-deps
+	cd frontend && $(FRONTEND_TEST_ENV) bun run test:e2e
 
 test-ci: test-backend test-frontend test-e2e

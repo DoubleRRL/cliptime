@@ -20,7 +20,7 @@ import {
   Target,
   ScanFace,
   Type,
-  Film,
+  Search,
   MonitorPlay,
   Share2,
   Wand2,
@@ -78,10 +78,10 @@ const FEATURES = [
       "AI rates hook, engagement, value, and shareability — scored 0 to 100.",
   },
   {
-    icon: Film,
-    title: "B-Roll Overlays",
+    icon: Search,
+    title: "Custom Clip Finder",
     description:
-      "Automatically source and overlay relevant stock footage from Pexels.",
+      "Describe the moment you want — AI finds it in the transcript and renders a clip.",
   },
   {
     icon: Sparkles,

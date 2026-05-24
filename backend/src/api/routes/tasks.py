@@ -127,7 +127,6 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     if isinstance(background_color, str) and not background_color.startswith("#"):
         background_color = "#1A1A1ACC"
     caption_template = data.get("caption_template", config.default_caption_template)
-    include_broll = data.get("include_broll", False)
     processing_mode = data.get("processing_mode", config.default_processing_mode)
     if processing_mode not in {"fast", "balanced", "quality"}:
         processing_mode = config.default_processing_mode
@@ -155,7 +154,6 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             font_size=font_size,
             font_color=font_color,
             caption_template=caption_template,
-            include_broll=include_broll,
             processing_mode=processing_mode,
         )
 
@@ -333,8 +331,9 @@ async def get_task_progress_sse(task_id: str, request: Request):
             ),
         }
 
-        # If task is already completed or error, close connection
-        if task.get("status") in ["completed", "error"]:
+        # If task is already completed or error, close connection unless listening for clip events
+        subscribe_clips = request.query_params.get("subscribe") == "clips"
+        if task.get("status") in ["completed", "error"] and not subscribe_clips:
             yield {"event": "close", "data": json.dumps({"status": task.get("status")})}
             return
 
@@ -355,8 +354,8 @@ async def get_task_progress_sse(task_id: str, request: Request):
                 event_type = progress_data.get("event_type", "progress")
                 yield {"event": event_type, "data": json.dumps(progress_data)}
 
-                # Close connection if task is done
-                if progress_data.get("status") in ["completed", "error"]:
+                # Close connection if task is done (unless listening for clip events only)
+                if progress_data.get("status") in ["completed", "error"] and not subscribe_clips:
                     yield {
                         "event": "close",
                         "data": json.dumps({"status": progress_data.get("status")}),
@@ -613,7 +612,6 @@ async def apply_task_settings(
         font_size = _normalize_font_size(payload.get("font_size", 24))
         font_color = _normalize_font_color(payload.get("font_color", "#FFFFFF"))
         caption_template = payload.get("caption_template", "default")
-        include_broll = bool(payload.get("include_broll", False))
         apply_to_existing = bool(payload.get("apply_to_existing", False))
 
         task_service = TaskService(db)
@@ -631,7 +629,6 @@ async def apply_task_settings(
             font_size,
             font_color,
             caption_template,
-            include_broll,
             apply_to_existing,
         )
         return {"task": task, "message": "Task settings updated"}
@@ -686,6 +683,78 @@ async def export_clip(
     except Exception as e:
         logger.error(f"Error exporting clip: {e}")
         raise HTTPException(status_code=500, detail=f"Error exporting clip: {str(e)}")
+
+
+@router.post("/{task_id}/clips/generate-from-query")
+async def generate_clips_from_query(
+    task_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Find a user-described moment and enqueue custom clip rendering."""
+    try:
+        payload = await request.json()
+        query = str(payload.get("query") or "").strip()
+        clip_types = payload.get("clip_types") or []
+        if not isinstance(clip_types, list):
+            clip_types = []
+
+        font_family = _normalize_font_family(
+            payload.get("font_family", "TikTokSans-Regular")
+        )
+        font_size = _normalize_font_size(payload.get("font_size", 24))
+        font_color = _normalize_font_color(payload.get("font_color", "#FFFFFF"))
+        caption_template = payload.get("caption_template", "default")
+
+        if not query:
+            raise HTTPException(status_code=400, detail="Query is required")
+
+        normalized_types = [
+            clip_type
+            for clip_type in clip_types
+            if clip_type in ("micro_hook", "deep_context")
+        ]
+        if not normalized_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Select at least one clip format (micro_hook or deep_context)",
+            )
+
+        task_service = TaskService(db)
+        task = await _require_task_owner(request, task_service, db, task_id)
+        if task.get("status") != "completed":
+            raise HTTPException(
+                status_code=400,
+                detail="Task must be completed before generating custom clips",
+            )
+        if not is_font_accessible(font_family, task["user_id"]):
+            raise HTTPException(
+                status_code=400, detail="Selected font is not available"
+            )
+
+        job_id = await JobQueue.enqueue_job(
+            "generate_clips_from_query_task",
+            task_id,
+            query,
+            normalized_types,
+            font_family,
+            font_size,
+            font_color,
+            caption_template,
+        )
+
+        return {
+            "job_ids": [job_id],
+            "expected_clip_count": len(normalized_types),
+        }
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error enqueueing custom clip generation: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating clips from query: {str(e)}",
+        )
 
 
 @router.post("/{task_id}/cancel")

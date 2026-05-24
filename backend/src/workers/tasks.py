@@ -135,6 +135,56 @@ async def process_video_task(
                 await progress.error(str(e))
             raise
 
+async def generate_clips_from_query_task(
+    ctx: Dict[str, Any],
+    task_id: str,
+    query: str,
+    clip_types: list,
+    font_family: str = "TikTokSans-Regular",
+    font_size: int = 24,
+    font_color: str = "#FFFFFF",
+    caption_template: str = "riverside",
+) -> Dict[str, Any]:
+    """Background worker task to find and render custom clips from a user query."""
+    from ..database import AsyncSessionLocal
+    from ..services.task_service import TaskService
+    from ..workers.progress import ProgressTracker
+
+    set_trace_id(f"task-{task_id}-custom")
+    logger.info("Worker generating custom clips for task %s", task_id)
+
+    progress = ProgressTracker(ctx["redis"], task_id)
+
+    async with AsyncSessionLocal() as db:
+        task_service = TaskService(db)
+
+        async def clip_ready_callback(
+            clip_index: int, total_clips: int, clip_data: dict
+        ):
+            await progress.clip_ready(clip_index, total_clips, clip_data)
+
+        try:
+            result = await task_service.generate_clips_from_query(
+                task_id=task_id,
+                query=query,
+                clip_types=clip_types,
+                font_family=font_family,
+                font_size=font_size,
+                font_color=font_color,
+                caption_template=caption_template,
+                clip_ready_callback=clip_ready_callback,
+            )
+            logger.info("Custom clip generation completed for task %s", task_id)
+            return result
+        except Exception as e:
+            logger.error(
+                "Custom clip generation failed for task %s: %s",
+                task_id,
+                e,
+                exc_info=True,
+            )
+            raise
+
 # Worker configuration for arq
 class WorkerSettings:
     """Configuration for arq worker."""
@@ -145,7 +195,7 @@ class WorkerSettings:
     config = Config()
 
     # Functions to run
-    functions = [process_video_task]
+    functions = [process_video_task, generate_clips_from_query_task]
     queue_name = "supoclip_tasks"
 
     # Redis settings from environment

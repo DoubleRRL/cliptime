@@ -26,16 +26,3 @@ def test_build_transcript_analysis_prompt_requires_transcript_fidelity():
     assert "If there is a tradeoff between \"viral\" and \"accurate\", choose accuracy." in prompt
     assert "Do not reject or penalize a segment simply because of the subject matter" in prompt
     assert "[00:12 - 00:21] A strong opening line" in prompt
-
-
-def test_build_transcript_analysis_prompt_mentions_broll_only_when_enabled():
-    without_broll = build_transcript_analysis_prompt(
-        transcript="[00:12 - 00:21] A strong opening line"
-    )
-    with_broll = build_transcript_analysis_prompt(
-        transcript="[00:12 - 00:21] A strong opening line",
-        include_broll=True,
-    )
-
-    assert "B-roll opportunities" not in without_broll
-    assert "B-roll opportunities" in with_broll

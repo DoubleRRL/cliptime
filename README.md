@@ -10,7 +10,7 @@
 
 OpusClip charges $15-29/month and slaps watermarks on every free video. SupoClip gives you the same AI-powered video clipping capabilities - completely free, completely open source, and completely watermark-free, while still providing you with a hosted version, that doesn't cost the same amount as your mortgage.
 
-> For the hosted version, sign up for the waitlist here: [SupoClip Hosted](https://www.supoclip.com)
+> For the hosted version, visit [SupoClip Hosted](https://www.supoclip.com)
 
 ## Why SupoClip Exists
 
@@ -96,7 +96,7 @@ BETTER_AUTH_SECRET=change_this_in_production
 # NEXT_PUBLIC_DATAFAST_DOMAIN=your-domain.com
 # NEXT_PUBLIC_DATAFAST_ALLOW_LOCALHOST=false
 
-# Optional: Resend for waitlist confirmation emails
+# Optional: Resend for subscription lifecycle emails
 # RESEND_API_KEY=your_resend_api_key
 
 # Optional: YouTube metadata provider
@@ -135,7 +135,7 @@ Open http://localhost:3000 in your browser, create an account, and start clippin
 If you enable DataFast, also verify that:
 - `/js/script.js` loads from your own app domain
 - `/api/events` requests are proxied through your app domain
-- custom goals appear after successful sign-up, sign-in, task creation, billing, feedback, or waitlist actions
+- custom goals appear after successful sign-up, sign-in, task creation, billing, or feedback actions
 
 ### Troubleshooting
 
@@ -205,8 +205,8 @@ App-level entrypoints:
 
 ```bash
 cd backend && uv sync --all-groups && .venv/bin/pytest
-cd frontend && npm install && npm run test:coverage
-cd frontend && npm run test:e2e
+cd frontend && bun install && bun run test:coverage
+cd frontend && bun run test:e2e
 ```
 
 Local test runs expect PostgreSQL and Redis to be available. The easiest path is to start the stack with `docker-compose up -d`, then run the commands above. CI runs the same layers in GitHub Actions with Postgres and Redis service containers.

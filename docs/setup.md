@@ -20,7 +20,6 @@ This guide covers the recommended Docker setup, local development mode, and the 
 
 ### Optional credentials
 
-- `PEXELS_API_KEY` for AI B-roll sourcing
 - `NEXT_PUBLIC_DATAFAST_WEBSITE_ID` and `NEXT_PUBLIC_DATAFAST_DOMAIN` for DataFast analytics
 - `RESEND_API_KEY` and `RESEND_FROM_EMAIL` for hosted billing emails
 - Stripe keys if you are running with monetization enabled
@@ -122,7 +121,7 @@ After the stack is up:
 5. Wait for clip generation to finish.
 6. Open the clips list and verify playback and download work.
 7. If DataFast is enabled, open browser devtools and confirm `/js/script.js` and `/api/events` load from your own domain.
-8. Trigger one successful action such as sign-up, sign-in, task creation, feedback submission, or waitlist submission and verify the goal arrives in DataFast.
+8. Trigger one successful action such as sign-up, sign-in, task creation, or feedback submission and verify the goal arrives in DataFast.
 
 ## Local Development Without Docker
 
@@ -150,8 +149,8 @@ arq src.workers.tasks.WorkerSettings
 
 ```bash
 cd frontend
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 ### Required local dependencies

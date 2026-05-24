@@ -216,18 +216,6 @@ async def get_caption_templates():
         return {"templates": templates or default_templates}
     except Exception:
         return {"templates": default_templates}
-
-
-@router.get("/broll/status")
-async def get_broll_status():
-    """Return whether B-roll integrations are configured."""
-    config = Config()
-    return {
-        "configured": bool(config.pexels_api_key),
-        "provider": "pexels" if config.pexels_api_key else None,
-    }
-
-
 def _analyze_preview_frame(content: bytes) -> dict:
     """Decode a JPEG/PNG frame and detect speaker panel regions."""
     import cv2

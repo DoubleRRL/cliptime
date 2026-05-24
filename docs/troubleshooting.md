@@ -216,7 +216,7 @@ Some font upload behavior can differ when monetization is enabled, so verify whe
 - Rebuild or restart if the mount or registry state is stale
 - Confirm the frontend is calling `/api/fonts` successfully
 
-## Caption Templates or B-roll Are Missing
+## Caption Templates Are Missing
 
 ### Caption templates
 
@@ -225,14 +225,6 @@ If templates are missing:
 - check `GET /caption-templates`
 - inspect backend logs
 - verify template definitions are still valid
-
-### B-roll
-
-If B-roll is unavailable:
-
-- confirm `PEXELS_API_KEY` is set
-- check `GET /broll/status`
-- confirm the provider account has not been rate-limited or disabled
 
 ## Billing or Subscription Flow Is Broken
 
@@ -311,7 +303,6 @@ If Redis is unavailable, task creation may still appear to work while background
 - Keep `DEFAULT_PROCESSING_MODE=fast`
 - Lower `FAST_MODE_MAX_CLIPS`
 - Use a lighter model where acceptable
-- Avoid enabling B-roll unless needed
 - Watch `GET /tasks/metrics/performance` for aggregate timing
 
 ## Task Detail Page Never Finishes Refreshing

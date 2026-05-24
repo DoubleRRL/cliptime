@@ -119,8 +119,6 @@ Current top-level layout:
 - `.env.example`
 - `start.sh`
 
-This repository snapshot does not currently include the separate `waitlist/` app referenced in older project guidance.
-
 ## Backend Architecture
 
 The backend follows a layered pattern.
@@ -195,8 +193,6 @@ Important backend modules:
   - Post-generation clip edits and exports
 - `caption_templates.py`
   - Available subtitle template definitions
-- `broll.py`
-  - Optional Pexels integration
 - `font_registry.py`
   - Font discovery and registration
 - `observability.py`
@@ -303,7 +299,6 @@ The rough pipeline is:
    - Subtitle placement and styling
    - Face-aware cropping
    - Optional transitions
-   - Optional B-roll
 5. Persistence
    - Clip metadata in PostgreSQL
    - media files in mounted storage
@@ -357,7 +352,6 @@ Stores:
 - Task status
 - Progress percentage and message
 - Font and caption settings
-- B-roll setting
 - Processing mode
 - Timing and cache metadata
 
@@ -415,17 +409,13 @@ Redis is required for:
 
 The backend exposes interactive docs at `/docs`, which is helpful for inspecting available endpoints outside the frontend.
 
-## Legacy and Active Entry Points
+## Active Entry Point
 
-The active backend entry point is:
+The backend entry point is:
 
 - `backend/src/main_refactored.py`
 
-The legacy monolithic file still exists:
-
-- `backend/src/main.py`
-
-For new work, use the refactored entry point and layered route structure.
+Use the layered route structure under `backend/src/api/routes/` for new work.
 
 ## Related Reading
 

@@ -60,8 +60,6 @@ The current repository snapshot includes:
 - `backend/`: the FastAPI API and ARQ worker code
 - Root-level infrastructure files such as `docker-compose.yml`, `init.sql`, `.env.example`, and `start.sh`
 
-Repository guidance still mentions a separate `waitlist/` app, but that directory is not present in this checkout. The documentation in this folder reflects the repository as it exists now.
-
 ## Recommended Reading Paths
 
 For operators:
@@ -89,4 +87,4 @@ This new docs tree replaces the need to hunt across several markdown files, but 
 - [`QUICKSTART.md`](../QUICKSTART.md)
 - [`CLAUDE.md`](../CLAUDE.md)
 - [`REFACTORING_COMPLETE.md`](../REFACTORING_COMPLETE.md)
-- [`backend/REFACTORING_GUIDE.md`](../backend/REFACTORING_GUIDE.md)
+- [`docs/archive/refactoring-guide.md`](./archive/refactoring-guide.md)

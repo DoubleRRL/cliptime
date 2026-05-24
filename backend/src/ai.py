@@ -65,17 +65,8 @@ class TranscriptSegment(BaseModel):
     virality: ViralityAnalysis = Field(description="Detailed virality score breakdown")
 
 
-class BRollOpportunity(BaseModel):
-    """Identifies an opportunity to insert B-roll footage."""
-
-    timestamp: str = Field(description="When to insert B-roll (MM:SS format)")
-    duration: float = Field(description="How long to show B-roll (2-5 seconds)")
-    search_term: str = Field(description="Keyword to search for B-roll footage")
-    context: str = Field(description="What's being discussed at this point")
-
-
 class TranscriptAnalysis(BaseModel):
-    """Analysis result for transcript segments with virality and B-roll opportunities."""
+    """Analysis result for transcript segments with virality scoring."""
 
     most_relevant_segments: List[TranscriptSegment] = Field(
         default_factory=list,
@@ -91,12 +82,9 @@ class TranscriptAnalysis(BaseModel):
     )
     summary: str = Field(description="Brief summary of the video content")
     key_topics: List[str] = Field(description="List of main topics discussed")
-    broll_opportunities: Optional[List[BRollOpportunity]] = Field(
-        default=None, description="Opportunities to insert B-roll footage"
-    )
 
 
-# Enhanced system prompt with virality scoring and B-roll detection
+# Enhanced system prompt with virality scoring
 transcript_analysis_system_prompt = """You are an expert transcript analyst for short-form video editing.
 
 Your job is extraction and ranking, not creative rewriting. You must stay fully grounded in the transcript and choose the best clip candidates that already exist in the source material.
@@ -169,13 +157,6 @@ HOOK TYPES to identify:
 - "story": Starts with narrative/anecdote
 - "contrast": Before/after or problem/solution framing
 - "none": No clear hook pattern
-
-B-ROLL OPPORTUNITIES:
-Identify 2-4 moments in each segment where B-roll footage could enhance the video:
-- When specific objects, places, or concepts are mentioned
-- During explanations that could benefit from visual illustration
-- At emotional peaks that could use supporting imagery
-- Use simple, searchable keywords (e.g., "coffee shop", "laptop coding", "money stack")
 
 TIMING & CATEGORIZATION GUIDELINES:
 1. micro_hooks:
@@ -325,15 +306,9 @@ def get_transcript_agent() -> Agent[None, TranscriptAnalysis]:
 
 
 def build_transcript_analysis_prompt(
-    transcript: str, include_broll: bool = False, json_only: bool = False
+    transcript: str, json_only: bool = False
 ) -> str:
     """Build the grounded task prompt for transcript analysis."""
-    broll_instruction = ""
-    if include_broll:
-        broll_instruction = (
-            "\n6. Also identify B-roll opportunities for each chosen segment where stock footage could enhance the visual appeal."
-        )
-
     json_instruction = ""
     if json_only:
         json_instruction = (
@@ -355,7 +330,7 @@ Follow this workflow:
 4. For each chosen segment, use the earliest timestamp in the selected range as start_time and the latest timestamp in the selected range as end_time.
 5. Return results in two tiers:
    - micro_hooks: 3-5 clips, each 10-30 seconds, punchy standalone hooks.
-   - deep_context_clips: 2-4 clips, each 30-90 seconds, richer narrative arcs.{broll_instruction}
+   - deep_context_clips: 2-4 clips, each 30-90 seconds, richer narrative arcs.
 
 Required JSON output keys:
 - micro_hooks (array of segment objects)
@@ -556,11 +531,10 @@ def _parse_raw_analysis(raw: dict) -> TranscriptAnalysis:
         deep_context_clips=deep_context_clips,
         summary=summary,
         key_topics=key_topics if isinstance(key_topics, list) else [str(key_topics)],
-        broll_opportunities=None,
     )
 
 
-async def _ollama_raw_json_call(transcript: str, include_broll: bool = False) -> Optional[TranscriptAnalysis]:
+async def _ollama_raw_json_call(transcript: str) -> Optional[TranscriptAnalysis]:
     """Call Ollama directly via HTTP and manually parse the dual-tier JSON response."""
     import httpx
 
@@ -568,7 +542,7 @@ async def _ollama_raw_json_call(transcript: str, include_broll: bool = False) ->
     model_name = config.llm.removeprefix("ollama:")
 
     prompt = build_transcript_analysis_prompt(
-        transcript=transcript, include_broll=include_broll, json_only=True
+        transcript=transcript, json_only=True
     )
     system = transcript_analysis_system_prompt + OLLAMA_JSON_RESPONSE_SUFFIX
 
@@ -616,8 +590,8 @@ async def _ollama_raw_json_call(transcript: str, include_broll: bool = False) ->
 
 
 # Backward-compatible alias
-async def _fallback_raw_ollama_call(transcript: str, include_broll: bool = False) -> Optional[TranscriptAnalysis]:
-    return await _ollama_raw_json_call(transcript, include_broll)
+async def _fallback_raw_ollama_call(transcript: str) -> Optional[TranscriptAnalysis]:
+    return await _ollama_raw_json_call(transcript)
 
 
 def _segment_key(segment: TranscriptSegment) -> tuple[str, str]:
@@ -625,7 +599,7 @@ def _segment_key(segment: TranscriptSegment) -> tuple[str, str]:
 
 
 def _validate_and_finalize_analysis(
-    analysis: TranscriptAnalysis, include_broll: bool = False
+    analysis: TranscriptAnalysis,
 ) -> TranscriptAnalysis:
     """Validate segments, enforce tier durations, and build the final analysis."""
     validated_micro_hooks: List[TranscriptSegment] = []
@@ -795,7 +769,6 @@ def _validate_and_finalize_analysis(
         deep_context_clips=validated_deep_context_clips,
         summary=analysis.summary,
         key_topics=analysis.key_topics,
-        broll_opportunities=analysis.broll_opportunities if include_broll else None,
     )
 
     logger.info(
@@ -1155,19 +1128,17 @@ async def analyze_transcript_map_reduce(
         summary=summaries[0] if summaries else "Windowed transcript analysis",
         key_topics=sorted(topics) if topics else ["general"],
     )
-    return _validate_and_finalize_analysis(draft, include_broll=False)
+    return _validate_and_finalize_analysis(draft)
 
 
 async def get_most_relevant_parts_by_transcript(
     transcript: str,
-    include_broll: bool = False,
     processing_mode: str = "quality",
     progress_callback: Optional[Callable[[int, str, str], Awaitable[None]]] = None,
 ) -> TranscriptAnalysis:
-    """Get the most relevant parts of a transcript with virality scoring and optional B-roll detection."""
+    """Get the most relevant parts of a transcript with virality scoring."""
     logger.info(
-        f"Starting AI analysis of transcript ({len(transcript)} chars), "
-        f"include_broll={include_broll}"
+        f"Starting AI analysis of transcript ({len(transcript)} chars)"
     )
 
     analysis: Optional[TranscriptAnalysis] = None
@@ -1184,7 +1155,7 @@ async def get_most_relevant_parts_by_transcript(
         )
 
     if config.llm.startswith("ollama:"):
-        analysis = await _ollama_raw_json_call(transcript, include_broll)
+        analysis = await _ollama_raw_json_call(transcript)
         if analysis is None:
             raise RuntimeError(
                 "Transcript analysis failed: Ollama returned no parseable JSON. "
@@ -1194,9 +1165,7 @@ async def get_most_relevant_parts_by_transcript(
         try:
             agent = get_transcript_agent()
             result = await agent.run(
-                build_transcript_analysis_prompt(
-                    transcript=transcript, include_broll=include_broll
-                ),
+                build_transcript_analysis_prompt(transcript=transcript),
                 model_settings={"temperature": 0.1, "max_tokens": 8192},
             )
             analysis = result.data
@@ -1211,7 +1180,7 @@ async def get_most_relevant_parts_by_transcript(
             ) from structured_err
 
     try:
-        return _validate_and_finalize_analysis(analysis, include_broll=include_broll)
+        return _validate_and_finalize_analysis(analysis)
     except Exception as e:
         logger.error(f"Error in transcript analysis: {e}")
         raise RuntimeError(f"Transcript analysis failed: {str(e)}") from e
@@ -1220,3 +1189,247 @@ async def get_most_relevant_parts_by_transcript(
 def get_most_relevant_parts_sync(transcript: str) -> TranscriptAnalysis:
     """Synchronous wrapper for the async function."""
     return asyncio.run(get_most_relevant_parts_by_transcript(transcript))
+
+
+class QueryMatchVariantResult(BaseModel):
+    """A user-query clip variant with assessment metadata."""
+
+    clip_type: Literal["micro_hook", "deep_context"]
+    segment: TranscriptSegment
+    match_confidence: float = Field(ge=0.0, le=1.0, default=0.5)
+    quality_verdict: Literal["strong", "fair", "weak"] = "fair"
+    quality_reasoning: str = ""
+
+
+class QueryMatchResult(BaseModel):
+    """Segments located from a natural-language user query."""
+
+    anchor_quote: str = ""
+    variants: List[QueryMatchVariantResult] = Field(default_factory=list)
+
+
+def _extract_transcript_excerpt(transcript: str, user_query: str, window_lines: int = 40) -> str:
+    """Score transcript lines and return a focused excerpt for LLM refinement."""
+    from difflib import SequenceMatcher
+
+    query = user_query.lower().strip()
+    lines = [line.strip() for line in transcript.splitlines() if line.strip()]
+    if not lines:
+        return transcript[:12000]
+
+    scored: list[tuple[float, int]] = []
+    query_words = [word for word in query.split() if len(word) > 3]
+    for index, line in enumerate(lines):
+        line_lower = line.lower()
+        ratio = SequenceMatcher(None, query, line_lower).ratio()
+        word_hits = sum(1 for word in query_words if word in line_lower)
+        score = ratio + word_hits * 0.15
+        scored.append((score, index))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    if not scored or scored[0][0] < 0.08:
+        return transcript[:12000]
+
+    anchor = scored[0][1]
+    start = max(0, anchor - window_lines // 2)
+    end = min(len(lines), start + window_lines)
+    return "\n".join(lines[start:end])
+
+
+def build_query_match_prompt(
+    transcript_excerpt: str,
+    user_query: str,
+    clip_types: List[Literal["micro_hook", "deep_context"]],
+) -> str:
+    requested = ", ".join(clip_types)
+    return f"""The user remembers this moment from a video:
+"{user_query}"
+
+Locate the best matching quote in the transcript excerpt below, then derive clip windows.
+
+Requested clip types: {requested}
+- micro_hook: 10-30 second punchy standalone clip centered on the matched quote
+- deep_context: 30-90 second clip with setup and payoff around the same anchor moment
+
+If both types are requested, return BOTH variants from the SAME anchor quote (not unrelated spans).
+
+Return JSON only:
+{{
+  "anchor_quote": "verbatim quote from transcript",
+  "match_confidence": 0.0,
+  "variants": [
+    {{
+      "clip_type": "micro_hook",
+      "start_time": "MM:SS",
+      "end_time": "MM:SS",
+      "text": "transcript text for the span",
+      "relevance_score": 0.0,
+      "quality_verdict": "strong",
+      "quality_reasoning": "why this match is strong/fair/weak",
+      "reasoning": "why this clip works",
+      "virality": {{
+        "hook_score": 0,
+        "engagement_score": 0,
+        "value_score": 0,
+        "shareability_score": 0,
+        "total_score": 0,
+        "hook_type": "none",
+        "virality_reasoning": "brief explanation"
+      }}
+    }}
+  ]
+}}
+
+Transcript excerpt:
+{transcript_excerpt}
+"""
+
+
+def _parse_query_match_variant(
+    raw: dict,
+    expected_type: Literal["micro_hook", "deep_context"],
+) -> Optional[QueryMatchVariantResult]:
+    if not isinstance(raw, dict):
+        return None
+
+    clip_type = raw.get("clip_type") or expected_type
+    if clip_type != expected_type:
+        return None
+
+    start_time = str(raw.get("start_time", "")).strip()
+    end_time = str(raw.get("end_time", "")).strip()
+    text = str(raw.get("text", "")).strip()
+    if not start_time or not end_time or not text:
+        return None
+
+    start_time, end_time = _normalize_segment_times(start_time, end_time)
+    virality_raw = raw.get("virality") if isinstance(raw.get("virality"), dict) else {}
+    try:
+        virality = ViralityAnalysis(**virality_raw) if virality_raw else _build_default_virality()
+    except Exception:
+        virality = _build_default_virality()
+
+    segment = TranscriptSegment(
+        start_time=start_time,
+        end_time=end_time,
+        text=text,
+        relevance_score=float(raw.get("relevance_score", 0.7) or 0.7),
+        reasoning=str(raw.get("reasoning") or "Custom clip from user query"),
+        virality=virality,
+    )
+
+    duration = _segment_duration_seconds(segment)
+    if duration is None:
+        return None
+    tier = _classify_segment_tier(duration)
+    if tier != expected_type:
+        logger.warning(
+            "Query match variant duration %ss does not match %s tier",
+            duration,
+            expected_type,
+        )
+        return None
+
+    verdict = str(raw.get("quality_verdict") or "fair").lower()
+    if verdict not in {"strong", "fair", "weak"}:
+        verdict = "fair"
+
+    confidence_raw = raw.get("match_confidence", raw.get("relevance_score", 0.7))
+    try:
+        match_confidence = float(confidence_raw)
+    except (TypeError, ValueError):
+        match_confidence = 0.7
+    match_confidence = max(0.0, min(1.0, match_confidence))
+
+    return QueryMatchVariantResult(
+        clip_type=expected_type,
+        segment=segment,
+        match_confidence=match_confidence,
+        quality_verdict=verdict,  # type: ignore[arg-type]
+        quality_reasoning=str(raw.get("quality_reasoning") or ""),
+    )
+
+
+def _parse_query_match_result(
+    raw: Optional[dict],
+    clip_types: List[Literal["micro_hook", "deep_context"]],
+) -> QueryMatchResult:
+    if not raw:
+        return QueryMatchResult()
+
+    anchor_quote = str(raw.get("anchor_quote") or "")
+    raw_variants = raw.get("variants") if isinstance(raw.get("variants"), list) else []
+    parsed: List[QueryMatchVariantResult] = []
+
+    for clip_type in clip_types:
+        matched = None
+        for item in raw_variants:
+            if isinstance(item, dict) and item.get("clip_type") == clip_type:
+                matched = _parse_query_match_variant(item, clip_type)
+                if matched:
+                    break
+        if matched is None:
+            for item in raw_variants:
+                matched = _parse_query_match_variant(item, clip_type)
+                if matched:
+                    break
+        if matched:
+            parsed.append(matched)
+
+    return QueryMatchResult(anchor_quote=anchor_quote, variants=parsed)
+
+
+async def find_segment_by_user_query(
+    transcript: str,
+    user_query: str,
+    clip_types: List[Literal["micro_hook", "deep_context"]],
+) -> QueryMatchResult:
+    """Locate transcript spans matching a user-described moment."""
+    if not transcript.strip():
+        raise ValueError("Transcript is empty")
+    if not user_query.strip():
+        raise ValueError("Query is empty")
+    if not clip_types:
+        raise ValueError("At least one clip type is required")
+
+    excerpt = _extract_transcript_excerpt(transcript, user_query)
+    prompt = build_query_match_prompt(excerpt, user_query, clip_types)
+    system = (
+        transcript_analysis_system_prompt
+        + "\nYou are locating a user-requested moment. Respond with JSON only."
+        + OLLAMA_JSON_RESPONSE_SUFFIX
+    )
+
+    raw: Optional[dict] = None
+    if config.llm.startswith("ollama:"):
+        raw = await _ollama_json_request(system, prompt, num_predict=4096)
+    else:
+        model_name = config.llm
+        config_error = _get_missing_llm_key_error(model_name)
+        if config_error:
+            raise RuntimeError(config_error)
+
+        model: Any = model_name
+        if model_name.startswith("ollama:"):
+            from pydantic_ai.models.openai import OpenAIModel
+            from pydantic_ai.providers.openai import OpenAIProvider
+
+            actual_model = model_name.removeprefix("ollama:")
+            base_url = config.ollama_base_url or "http://localhost:11434/v1"
+            provider = OpenAIProvider(base_url=base_url)
+            model = OpenAIModel(model_name=actual_model, provider=provider)
+
+        query_agent = Agent(model=model, output_type=str, system_prompt=system)
+        result = await query_agent.run(
+            prompt,
+            model_settings={"temperature": 0.1, "max_tokens": 4096},
+        )
+        raw = _extract_json_from_text(str(result.output))
+
+    parsed = _parse_query_match_result(raw, clip_types)
+    if not parsed.variants:
+        raise RuntimeError(
+            "Could not locate a matching moment in the transcript. Try rephrasing your description."
+        )
+    return parsed
+

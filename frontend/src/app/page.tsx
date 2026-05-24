@@ -183,12 +183,10 @@ export default function Home() {
   const [isUploadingFont, setIsUploadingFont] = useState(false);
   const fontUploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Caption template and B-roll states
+  // Caption template states
   const [captionTemplate, setCaptionTemplate] = useState(DEFAULT_CAPTION_TEMPLATE);
   const [availableTemplates, setAvailableTemplates] = useState<CaptionTemplateOption[]>([]);
-  const [includeBroll, setIncludeBroll] = useState(false);
   const [processingMode, setProcessingMode] = useState(DEFAULT_PROCESSING_MODE);
-  const [brollAvailable, setBrollAvailable] = useState(false);
   const [outputFormat, setOutputFormat] = useState<"vertical" | "original">("vertical");
   const [addSubtitles, setAddSubtitles] = useState(true);
   const [isAdjustingSize, setIsAdjustingSize] = useState(false);
@@ -278,7 +276,7 @@ export default function Home() {
     void refreshFonts();
   }, [refreshFonts]);
 
-  // Load caption templates and check B-roll availability
+  // Load caption templates
   useEffect(() => {
     const loadTemplates = async () => {
       try {
@@ -292,20 +290,7 @@ export default function Home() {
       }
     };
 
-    const checkBrollStatus = async () => {
-      try {
-        const response = await fetch(`${apiUrl}/broll/status`);
-        if (response.ok) {
-          const data = await response.json();
-          setBrollAvailable(data.configured || false);
-        }
-      } catch (error) {
-        console.error('Failed to check B-roll status:', error);
-      }
-    };
-
     loadTemplates();
-    checkBrollStatus();
   }, [apiUrl]);
 
   // Load user preferences as defaults
@@ -766,7 +751,6 @@ export default function Home() {
             background_color: pillColor,
           },
           caption_template: captionTemplate,
-          include_broll: includeBroll,
           processing_mode: processingMode,
           output_format: outputFormat,
           add_subtitles: addSubtitles
@@ -786,7 +770,6 @@ export default function Home() {
       track("task_created", {
         source_type: sourceType,
         caption_template: captionTemplate,
-        include_broll: includeBroll,
         output_format: outputFormat,
         add_subtitles: addSubtitles,
         processing_mode: processingMode,
@@ -1328,24 +1311,6 @@ export default function Home() {
                       </SelectContent>
                     </Select>
                   </div>
-
-                  {/* B-Roll Toggle */}
-                  {brollAvailable && (
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/40">
-                      <div className="flex items-center gap-3">
-                        <Film className="w-4 h-4 text-purple-500" />
-                        <div>
-                          <h3 className="text-sm font-medium text-foreground">AI B-Roll</h3>
-                          <p className="text-xs text-muted-foreground">Auto-add stock footage from Pexels</p>
-                        </div>
-                      </div>
-                      <Switch
-                        checked={includeBroll}
-                        onCheckedChange={setIncludeBroll}
-                        disabled={isLoading}
-                      />
-                    </div>
-                  )}
 
                   {/* Output format */}
                   <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/40">

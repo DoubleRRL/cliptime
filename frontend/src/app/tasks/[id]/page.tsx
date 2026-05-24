@@ -58,6 +58,8 @@ import Link from "next/link";
 import DynamicVideoPlayer from "@/components/dynamic-video-player";
 import { MotionCard, MotionNumber } from "@/components/motion-primitives";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { CaptionPreviewSidebar } from "@/components/caption-preview-sidebar";
+import { CustomClipPanel } from "@/components/custom-clip-panel";
 
 interface Clip {
   id: string;
@@ -87,6 +89,7 @@ interface TaskDetails {
   source_id: string;
   source_title: string;
   source_type: string;
+  source_url?: string;
   status: string;
   progress?: number;
   progress_message?: string;
@@ -98,7 +101,6 @@ interface TaskDetails {
   font_size?: number;
   font_color?: string;
   caption_template?: string;
-  include_broll?: boolean;
 }
 
 interface FontOption {
@@ -135,7 +137,6 @@ export default function TaskPage() {
   const [projectFontSize, setProjectFontSize] = useState("24");
   const [projectFontColor, setProjectFontColor] = useState("#FFFFFF");
   const [projectCaptionTemplate, setProjectCaptionTemplate] = useState("default");
-  const [projectIncludeBroll, setProjectIncludeBroll] = useState(false);
   const [isApplyingSettings, setIsApplyingSettings] = useState(false);
   const [settingsSheetOpen, setSettingsSheetOpen] = useState(false);
   const [availableFonts, setAvailableFonts] = useState<FontOption[]>([]);
@@ -144,9 +145,31 @@ export default function TaskPage() {
   >([]);
   const hasTriggeredAutoRefresh = useRef(false);
   const [activityLog, setActivityLog] = useState<string[]>([]);
+  const [customClipIds, setCustomClipIds] = useState<Set<string>>(new Set());
 
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
   const taskApiUrl = "/api/tasks";
+
+  const youtubeThumbnail = (url?: string | null) => {
+    if (!url) return null;
+    const match = url.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
+    return match ? `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg` : null;
+  };
+
+  const isCustomClip = useCallback(
+    (clip: Clip) => customClipIds.has(clip.id) || clip.reasoning?.startsWith("Custom clip"),
+    [customClipIds],
+  );
+
+  const handleCustomClipReady = useCallback((clipData: Record<string, unknown>) => {
+    const clip = clipData as unknown as Clip;
+    setCustomClipIds((prev) => new Set(prev).add(clip.id));
+    setClips((prev) => {
+      const exists = prev.some((existing) => existing.id === clip.id);
+      if (exists) return prev;
+      return [...prev, clip].sort((a, b) => (a.clip_order ?? 0) - (b.clip_order ?? 0));
+    });
+  }, []);
 
   const buildSupportError = useCallback(async (response: Response, fallbackMessage: string) => {
     const parsed = await parseApiError(response, fallbackMessage);
@@ -189,7 +212,6 @@ export default function TaskPage() {
         setProjectFontSize(String(taskData.font_size || 24));
         setProjectFontColor(taskData.font_color || "#FFFFFF");
         setProjectCaptionTemplate(taskData.caption_template || "default");
-        setProjectIncludeBroll(Boolean(taskData.include_broll));
 
         // Fetch clips if task is completed or processing (incremental clips)
         if (taskData.status === "completed" || taskData.status === "processing") {
@@ -598,7 +620,6 @@ export default function TaskPage() {
           font_size: safeFontSize,
           font_color: normalizedColor,
           caption_template: projectCaptionTemplate,
-          include_broll: projectIncludeBroll,
           apply_to_existing: true,
         }),
       });
@@ -998,54 +1019,8 @@ export default function TaskPage() {
               </div>
             </CardContent>
           </Card>
-        ) : clips.length === 0 ? (
-          <Card>
-            <CardContent className="p-8 text-center">
-              {task?.status === "completed" ? (
-                <>
-                  <div className="text-amber-400 mb-4">
-                    <AlertCircle className="w-12 h-12 mx-auto mb-2" />
-                    <h2 className="text-xl font-semibold">No Clips Generated</h2>
-                  </div>
-                  <p className="text-muted-foreground mb-4">
-                    The task completed but no clips were generated. The video may not have had suitable content for
-                    clipping.
-                  </p>
-                  <Link href="/">
-                    <Button>
-                      <ArrowLeft className="w-4 h-4" />
-                      Try Another Video
-                    </Button>
-                  </Link>
-                </>
-              ) : (
-                <>
-                  <div className="w-16 h-16 bg-blue-500/15 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Clock className="w-8 h-8 text-blue-300 animate-pulse" />
-                  </div>
-                  <h2 className="text-xl font-semibold text-foreground mb-2">Still Generating...</h2>
-                  <p className="text-muted-foreground">
-                    Your clips are being generated. This page will refresh automatically when they&apos;re ready.
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-6">
-            <div className="flex items-center justify-between">
-              <Button variant="outline" size="sm" onClick={() => setSettingsSheetOpen(true)}>
-                <Settings2 className="w-4 h-4" />
-                Project Settings
-              </Button>
-              {selectedClipIds.length >= 2 && (
-                <Button variant="outline" size="sm" onClick={handleMergeClips}>
-                  <GitMerge className="w-4 h-4" />
-                  Merge Selected ({selectedClipIds.length})
-                </Button>
-              )}
-            </div>
-
+        ) : task?.status === "completed" ? (
+          <>
             <Sheet open={settingsSheetOpen} onOpenChange={setSettingsSheetOpen}>
               <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
                 <SheetHeader>
@@ -1054,7 +1029,7 @@ export default function TaskPage() {
                     Project Settings
                   </SheetTitle>
                   <SheetDescription>
-                    Configure font, caption, and B-roll settings for this task&apos;s clips.
+                    Configure font and caption settings for this task&apos;s clips.
                   </SheetDescription>
                 </SheetHeader>
 
@@ -1131,16 +1106,438 @@ export default function TaskPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
 
-                  <label className="flex items-center gap-2 text-sm text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={projectIncludeBroll}
-                      onChange={(e) => setProjectIncludeBroll(e.target.checked)}
-                      className="rounded"
+                <SheetFooter>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      handleApplyProjectSettings();
+                      setSettingsSheetOpen(false);
+                    }}
+                    disabled={isApplyingSettings}
+                  >
+                    {isApplyingSettings ? "Applying..." : "Apply to All Clips"}
+                  </Button>
+                </SheetFooter>
+              </SheetContent>
+            </Sheet>
+
+            <div className="flex flex-col lg:flex-row gap-8">
+              <div className="flex-1 min-w-0">
+                {clips.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-8 text-center">
+                      <div className="text-amber-400 mb-4">
+                        <AlertCircle className="w-12 h-12 mx-auto mb-2" />
+                        <h2 className="text-xl font-semibold">No Clips Generated</h2>
+                      </div>
+                      <p className="text-muted-foreground mb-4">
+                        The task completed but no clips were generated. Describe a moment in the sidebar to create one.
+                      </p>
+                      <Link href="/">
+                        <Button variant="outline">
+                          <ArrowLeft className="w-4 h-4" />
+                          Try Another Video
+                        </Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="grid gap-6">
+                    <div className="flex items-center justify-between">
+                      <Button variant="outline" size="sm" onClick={() => setSettingsSheetOpen(true)}>
+                        <Settings2 className="w-4 h-4" />
+                        Project Settings
+                      </Button>
+                      {selectedClipIds.length >= 2 && (
+                        <Button variant="outline" size="sm" onClick={handleMergeClips}>
+                          <GitMerge className="w-4 h-4" />
+                          Merge Selected ({selectedClipIds.length})
+                        </Button>
+                      )}
+                    </div>
+                    {clips.map((clip) => (
+                      <MotionCard key={clip.id}>
+                        <Card className="overflow-hidden">
+                          <CardContent className="p-0">
+                            <div className="flex flex-col lg:flex-row">
+                              <div className="relative flex-shrink-0 bg-black rounded-lg overflow-hidden m-3">
+                                <DynamicVideoPlayer src={`${apiUrl}${clip.video_url}`} poster="/placeholder-video.jpg" />
+                              </div>
+                              <div className="p-6 flex-1">
+                                <div className="flex items-start justify-between mb-4">
+                                  <div>
+                                    <label className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={selectedClipIds.includes(clip.id)}
+                                        onChange={() => handleToggleClipSelection(clip.id)}
+                                      />
+                                      Select for merge
+                                    </label>
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <h3 className="font-semibold text-lg text-foreground">Clip {clip.clip_order}</h3>
+                                      {isCustomClip(clip) && (
+                                        <Badge variant="secondary" className="text-xs">
+                                          Custom
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <span>
+                                        {clip.start_time} - {clip.end_time}
+                                      </span>
+                                      <span>•</span>
+                                      <span>{formatDuration(clip.duration)}</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {clip.virality_score > 0 && (
+                                      <Badge className={getViralityBgColor(clip.virality_score)}>
+                                        <Zap className="w-3 h-3 mr-1" />
+                                        <MotionNumber value={clip.virality_score} />
+                                      </Badge>
+                                    )}
+                                    <Badge className={getScoreColor(clip.relevance_score)}>
+                                      <Star className="w-3 h-3 mr-1" />
+                                      {clip.virality_score > 0
+                                        ? `${clip.virality_score}/100`
+                                        : `${(clip.relevance_score * 100).toFixed(0)}%`}
+                                    </Badge>
+                                  </div>
+                                </div>
+                                {clip.virality_score > 0 && (
+                                  <div className="mb-4 p-3 bg-muted/40 rounded-lg">
+                                    <div className="flex items-center justify-between mb-3">
+                                      <h4 className="font-medium text-foreground text-sm flex items-center gap-2">
+                                        <Zap className="w-4 h-4" />
+                                        Virality Score
+                                      </h4>
+                                      <span className={`text-lg font-bold ${getViralityColor(clip.virality_score)}`}>
+                                        <MotionNumber value={clip.virality_score} />/100
+                                      </span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3 text-xs">
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-between">
+                                          <span className="flex items-center gap-1 text-muted-foreground">
+                                            <MessageSquare className="w-3 h-3" />
+                                            Hook
+                                          </span>
+                                          <span className="font-medium">{clip.hook_score}/25</span>
+                                        </div>
+                                        <Progress value={(clip.hook_score / 25) * 100} className="h-1.5" />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-between">
+                                          <span className="flex items-center gap-1 text-muted-foreground">
+                                            <TrendingUp className="w-3 h-3" />
+                                            Engagement
+                                          </span>
+                                          <span className="font-medium">{clip.engagement_score}/25</span>
+                                        </div>
+                                        <Progress value={(clip.engagement_score / 25) * 100} className="h-1.5" />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-between">
+                                          <span className="flex items-center gap-1 text-muted-foreground">
+                                            <Star className="w-3 h-3" />
+                                            Value
+                                          </span>
+                                          <span className="font-medium">{clip.value_score}/25</span>
+                                        </div>
+                                        <Progress value={(clip.value_score / 25) * 100} className="h-1.5" />
+                                      </div>
+                                      <div className="space-y-1">
+                                        <div className="flex items-center justify-between">
+                                          <span className="flex items-center gap-1 text-muted-foreground">
+                                            <Share2 className="w-3 h-3" />
+                                            Shareability
+                                          </span>
+                                          <span className="font-medium">{clip.shareability_score}/25</span>
+                                        </div>
+                                        <Progress value={(clip.shareability_score / 25) * 100} className="h-1.5" />
+                                      </div>
+                                    </div>
+                                    {clip.hook_type && clip.hook_type !== "none" && (
+                                      <div className="mt-3 pt-2 border-t">
+                                        <Badge variant="outline" className="text-xs">
+                                          {getHookTypeLabel(clip.hook_type)}
+                                        </Badge>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {clip.text && (
+                                  <div className="mb-4">
+                                    <h4 className="font-medium text-foreground mb-2">Transcript</h4>
+                                    <p className="text-sm text-muted-foreground bg-muted/40 p-3 rounded">{clip.text}</p>
+                                  </div>
+                                )}
+                                {clip.reasoning && (
+                                  <div className="mb-4">
+                                    <h4 className="font-medium text-foreground mb-2">AI Analysis</h4>
+                                    <p className="text-sm text-muted-foreground">{clip.reasoning}</p>
+                                  </div>
+                                )}
+                                <div className="flex gap-2 flex-wrap">
+                                  <Button size="sm" variant="outline" asChild>
+                                    <a href={`${apiUrl}${clip.video_url}`} download={clip.filename}>
+                                      <Download className="w-4 h-4" />
+                                      Download
+                                    </a>
+                                  </Button>
+                                  <Button size="sm" variant="outline" onClick={() => handleExportClip(clip.id, clip.filename)}>
+                                    <Download className="w-4 h-4" />
+                                    Export
+                                  </Button>
+                                  <Select value={exportPreset} onValueChange={setExportPreset}>
+                                    <SelectTrigger className="h-8 w-28">
+                                      <SelectValue placeholder="Preset" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="tiktok">TikTok</SelectItem>
+                                      <SelectItem value="reels">Reels</SelectItem>
+                                      <SelectItem value="shorts">Shorts</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="text-red-400 hover:text-red-300 hover:bg-red-500/15 border-red-500/30"
+                                    onClick={() => setDeletingClipId(clip.id)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                    Delete
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setEditingClipId(editingClipId === clip.id ? null : clip.id);
+                                      setCaptionText(clip.text || "");
+                                    }}
+                                  >
+                                    <Scissors className="w-4 h-4" />
+                                    Edit
+                                  </Button>
+                                </div>
+
+                                {editingClipId === clip.id && (
+                                  <div className="mt-4 p-3 border border-border rounded-lg space-y-3 bg-muted/40">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                      <Input
+                                        value={startOffset}
+                                        onChange={(e) => setStartOffset(e.target.value)}
+                                        placeholder="Start trim (sec)"
+                                      />
+                                      <Input
+                                        value={endOffset}
+                                        onChange={(e) => setEndOffset(e.target.value)}
+                                        placeholder="End trim (sec)"
+                                      />
+                                      <Button size="sm" onClick={() => handleTrimClip(clip.id)}>
+                                        <Scissors className="w-4 h-4" />
+                                        Trim
+                                      </Button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                      <Input
+                                        value={splitTime}
+                                        onChange={(e) => setSplitTime(e.target.value)}
+                                        placeholder="Split at (sec)"
+                                      />
+                                      <Button size="sm" variant="outline" onClick={() => handleSplitClip(clip.id)}>
+                                        <SplitSquareVertical className="w-4 h-4" />
+                                        Split
+                                      </Button>
+                                      <Button size="sm" variant="outline" onClick={() => handleTrimClip(clip.id)}>
+                                        <RefreshCw className="w-4 h-4" />
+                                        Regenerate
+                                      </Button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                      <Input
+                                        value={captionText}
+                                        onChange={(e) => setCaptionText(e.target.value)}
+                                        placeholder="Caption text"
+                                      />
+                                      <Select value={captionPosition} onValueChange={setCaptionPosition}>
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Caption position" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="top">Top</SelectItem>
+                                          <SelectItem value="middle">Middle</SelectItem>
+                                          <SelectItem value="bottom">Bottom</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <Input
+                                        value={highlightWords}
+                                        onChange={(e) => setHighlightWords(e.target.value)}
+                                        placeholder="Highlights: word1, word2"
+                                      />
+                                    </div>
+                                    <Button size="sm" variant="outline" onClick={() => handleUpdateCaptions(clip.id)}>
+                                      <Subtitles className="w-4 h-4" />
+                                      Update Captions
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </MotionCard>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <CaptionPreviewSidebar
+                previewThumbnailUrl={youtubeThumbnail(task.source_url)}
+                previewMode={task.source_type === "youtube" ? "youtube" : "upload"}
+                fontFamily={projectFontFamily}
+                fontSize={Number(projectFontSize) || 24}
+                fontColor={projectFontColor}
+                templateName={
+                  availableTemplates.find((t) => t.id === projectCaptionTemplate)?.name ||
+                  projectCaptionTemplate
+                }
+                fontDisplayName={
+                  availableFonts.find((f) => f.name === projectFontFamily)?.display_name
+                }
+                onEditStyle={() => setSettingsSheetOpen(true)}
+                footer={
+                  <CustomClipPanel
+                    taskId={task.id}
+                    taskApiUrl={taskApiUrl}
+                    captionTemplate={projectCaptionTemplate}
+                    fontFamily={projectFontFamily}
+                    fontSize={Number(projectFontSize) || 24}
+                    fontColor={projectFontColor}
+                    emptyState={clips.length === 0}
+                    onClipReady={handleCustomClipReady}
+                  />
+                }
+              />
+            </div>
+          </>
+        ) : clips.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center">
+              <>
+                <div className="w-16 h-16 bg-blue-500/15 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Clock className="w-8 h-8 text-blue-300 animate-pulse" />
+                </div>
+                <h2 className="text-xl font-semibold text-foreground mb-2">Still Generating...</h2>
+                <p className="text-muted-foreground">
+                  Your clips are being generated. This page will refresh automatically when they&apos;re ready.
+                </p>
+              </>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-6">
+            <div className="flex items-center justify-between">
+              <Button variant="outline" size="sm" onClick={() => setSettingsSheetOpen(true)}>
+                <Settings2 className="w-4 h-4" />
+                Project Settings
+              </Button>
+              {selectedClipIds.length >= 2 && (
+                <Button variant="outline" size="sm" onClick={handleMergeClips}>
+                  <GitMerge className="w-4 h-4" />
+                  Merge Selected ({selectedClipIds.length})
+                </Button>
+              )}
+            </div>
+
+            <Sheet open={settingsSheetOpen} onOpenChange={setSettingsSheetOpen}>
+              <SheetContent side="right" className="sm:max-w-md overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle className="flex items-center gap-2">
+                    <Settings2 className="w-4 h-4" />
+                    Project Settings
+                  </SheetTitle>
+                  <SheetDescription>
+                    Configure font and caption settings for this task&apos;s clips.
+                  </SheetDescription>
+                </SheetHeader>
+
+                <div className="space-y-5 px-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Font</label>
+                    <Select value={projectFontFamily} onValueChange={setProjectFontFamily}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Font family" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableFonts.map((font) => (
+                          <SelectItem key={font.name} value={font.name}>
+                            <span className="flex items-center gap-2">
+                              <Type className="w-3 h-3" />
+                              {font.display_name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {availableFonts.length === 0 && (
+                          <SelectItem value="TikTokSans-Regular">TikTok Sans Regular</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Size</label>
+                    <Input
+                      type="number"
+                      min={12}
+                      max={72}
+                      value={projectFontSize}
+                      onChange={(e) => setProjectFontSize(e.target.value)}
+                      placeholder="Font size"
                     />
-                    Include B-roll
-                  </label>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Color</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="color"
+                        value={projectFontColor}
+                        onChange={(e) => setProjectFontColor(e.target.value)}
+                        className="h-9 w-9 rounded border border-border cursor-pointer"
+                      />
+                      <Input
+                        value={projectFontColor}
+                        onChange={(e) => setProjectFontColor(e.target.value)}
+                        placeholder="#FFFFFF"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-muted-foreground">Caption Template</label>
+                    <Select value={projectCaptionTemplate} onValueChange={setProjectCaptionTemplate}>
+                      <SelectTrigger>
+                        <SelectValue>
+                          {availableTemplates.find((t) => t.id === projectCaptionTemplate)?.name || "Select style"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableTemplates.map((template) => (
+                          <SelectItem key={template.id} value={template.id}>
+                            <div>
+                              <div className="font-medium">{template.name}</div>
+                              <div className="text-xs text-muted-foreground">{template.description}</div>
+                            </div>
+                          </SelectItem>
+                        ))}
+                        {availableTemplates.length === 0 && <SelectItem value="default">Default</SelectItem>}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 <SheetFooter>

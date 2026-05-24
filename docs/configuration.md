@@ -71,7 +71,6 @@ SupoClip can send pageviews and custom product events to DataFast from the `fron
   - `billing_portal_opened`
   - `preferences_saved`
   - `feedback_submitted`
-  - `waitlist_submitted`
 
 ## Processing Settings
 
@@ -82,7 +81,6 @@ These settings affect clip generation speed, throughput, and defaults.
 | `DEFAULT_PROCESSING_MODE` | `fast` | Default mode for new tasks |
 | `FAST_MODE_MAX_CLIPS` | `4` | Clip cap used by fast mode |
 | `FAST_MODE_TRANSCRIPT_MODEL` | `nano` | Lightweight transcript path for fast mode |
-| `WHISPER_MODEL_SIZE` | `medium` in `.env.example` | Whisper model size when Whisper is used locally |
 | `QUEUED_TASK_TIMEOUT_SECONDS` | `180` | Marks stale queued tasks as failed instead of leaving them stuck forever |
 | `MAX_VIDEO_DURATION` | `5400` | Maximum accepted input video length in seconds |
 | `MAX_CLIPS` | `10` | Upper bound used by backend logic |
@@ -93,10 +91,6 @@ These settings affect clip generation speed, throughput, and defaults.
 Current code and defaults emphasize a `fast` mode. If you expose additional modes such as `balanced` or `quality`, make sure the frontend and backend behavior stay aligned.
 
 ## Media and Creative Settings
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `PEXELS_API_KEY` | unset | Enables AI B-roll sourcing from Pexels |
 
 Fonts and transitions are configured by mounted files rather than environment variables:
 

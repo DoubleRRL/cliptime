@@ -19,8 +19,6 @@ Current repository structure:
   - `.env.example`
   - `start.sh`
 
-Note: older repo guidance references a `waitlist/` app, but it is not present in this checkout.
-
 ## Main Commands
 
 ## Full stack with Docker
@@ -35,11 +33,11 @@ docker-compose down
 
 ```bash
 cd frontend
-npm install
-npm run dev
-npm run build
-npm run start
-npm run lint
+bun install
+bun run dev
+bun run build
+bun run start
+bun run lint
 ```
 
 ## Backend
@@ -123,7 +121,13 @@ When possible:
 
 The primary database bootstrap file is:
 
-- `init.sql`
+- `init.sql` (repo root)
+
+Incremental SQL migrations live in:
+
+- `backend/migrations/*.sql`
+
+Apply migrations manually against existing databases when upgrading; fresh Docker installs use `init.sql` via the Postgres init hook.
 
 It defines:
 
@@ -242,8 +246,8 @@ Direct app-level commands:
 
 ```bash
 cd backend && uv sync --all-groups && .venv/bin/pytest
-cd frontend && npm install && npm run test:coverage
-cd frontend && npm run test:e2e
+cd frontend && bun install && bun run test:coverage
+cd frontend && bun run test:e2e
 ```
 
 ### Local Test Environment
@@ -266,7 +270,7 @@ BETTER_AUTH_SECRET=supoclip_better_auth_test_secret
 ### Coverage and CI
 
 - Backend coverage thresholds are enforced during `pytest`.
-- Frontend coverage thresholds are enforced during `npm run test:coverage`.
+- Frontend coverage thresholds are enforced during `bun run test:coverage`.
 - GitHub Actions runs separate `backend`, `frontend`, and `e2e` jobs with Postgres and Redis service containers.
 - Playwright failures retain traces, screenshots, and videos for debugging.
 
@@ -310,7 +314,7 @@ docker-compose logs -f redis
 
 ## Safe Defaults for New Work
 
-- Prefer `backend/src/main_refactored.py` over `main.py`
+- Use `backend/src/main_refactored.py` as the API entry point
 - Keep auth-sensitive browser requests behind frontend API routes
 - Preserve async behavior by keeping blocking work out of FastAPI request handlers
 - Use the worker for long-running media processing

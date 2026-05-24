@@ -55,8 +55,8 @@ class TranscriptWindowTests(unittest.TestCase):
         self.assertEqual(result[0].start_time, "01:05")
 
     def test_select_final_segments_caps_each_tier(self):
-        micro = [_segment("01:00", "01:20", 80 + i) for i in range(5)]
-        deep = [_segment("05:00", "06:00", 70 + i) for i in range(4)]
+        micro = [_segment(f"{i * 6:02d}:00", f"{i * 6:02d}:20", 80 + i) for i in range(5)]
+        deep = [_segment(f"{5 + i:02d}:00", f"{6 + i:02d}:00", 70 + i) for i in range(4)]
         final_micro, final_deep = select_final_segments(
             micro, deep, max_micro=2, max_deep=2
         )

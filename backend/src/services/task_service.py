@@ -96,7 +96,6 @@ class TaskService:
         font_size: int = 24,
         font_color: str = "#FFFFFF",
         caption_template: str = "default",
-        include_broll: bool = False,
         processing_mode: str = "quality",
     ) -> str:
         """
@@ -132,7 +131,6 @@ class TaskService:
             font_size=font_size,
             font_color=font_color,
             caption_template=caption_template,
-            include_broll=include_broll,
             processing_mode=processing_mode,
         )
 
@@ -512,7 +510,6 @@ class TaskService:
         font_size: int,
         font_color: str,
         caption_template: str,
-        include_broll: bool,
         apply_to_existing: bool,
     ) -> Dict[str, Any]:
         """Update task-level settings and optionally regenerate all clips."""
@@ -523,7 +520,6 @@ class TaskService:
             font_size,
             font_color,
             caption_template,
-            include_broll,
         )
 
         if apply_to_existing:
@@ -828,3 +824,195 @@ class TaskService:
         minutes = total // 60
         secs = total % 60
         return f"{minutes:02d}:{secs:02d}"
+
+    @staticmethod
+    def _transcript_from_disk_cache(video_path: Path) -> Optional[str]:
+        from ..video_utils import load_cached_transcript_data, format_ms_to_timestamp
+
+        data = load_cached_transcript_data(video_path)
+        if not data:
+            return None
+
+        utterances = data.get("utterances") or []
+        if utterances:
+            lines = []
+            for utterance in utterances:
+                start = format_ms_to_timestamp(int(utterance.get("start", 0)))
+                end = format_ms_to_timestamp(int(utterance.get("end", 0)))
+                text = str(utterance.get("text") or "").strip()
+                if text:
+                    lines.append(f"[{start} - {end}] {text}")
+            if lines:
+                return "\n".join(lines)
+
+        text = data.get("text")
+        return str(text).strip() if text else None
+
+    async def _resolve_task_transcript_and_video(
+        self, task: Dict[str, Any]
+    ) -> tuple[str, Path]:
+        source_url = task.get("source_url")
+        source_type = task.get("source_type")
+        processing_mode = task.get("processing_mode") or "quality"
+        task_id = task.get("id")
+
+        if not source_url or not source_type:
+            raise ValueError("Task source is missing")
+
+        cache_key = self._build_cache_key(source_url, source_type, processing_mode)
+        cache_entry = await self.cache_repo.get_cache(self.db, cache_key)
+        transcript = (cache_entry or {}).get("transcript_text")
+
+        video_path: Optional[Path] = None
+        cached_video = (cache_entry or {}).get("video_path")
+        if cached_video:
+            candidate = Path(cached_video)
+            if candidate.exists():
+                video_path = candidate
+
+        if source_type == "youtube":
+            if video_path is None:
+                downloaded = await self.video_service.download_video(
+                    source_url, task_id=task_id
+                )
+                if not downloaded:
+                    raise ValueError("Failed to download source video")
+                video_path = Path(downloaded)
+        else:
+            video_path = self.video_service.resolve_local_video_path(source_url)
+            if not video_path.exists():
+                raise ValueError("Source video file no longer exists")
+
+        if not transcript:
+            transcript = self._transcript_from_disk_cache(video_path)
+
+        if not transcript:
+            raise ValueError("Transcript not found for this task")
+
+        return transcript, video_path
+
+    async def generate_clips_from_query(
+        self,
+        task_id: str,
+        query: str,
+        clip_types: list[str],
+        font_family: str,
+        font_size: int,
+        font_color: str,
+        caption_template: str,
+        clip_ready_callback: Optional[Callable] = None,
+    ) -> Dict[str, Any]:
+        """Find user-described moments and render custom clips."""
+        from ..ai import find_segment_by_user_query
+
+        task = await self.task_repo.get_task_by_id(self.db, task_id)
+        if not task:
+            raise ValueError("Task not found")
+        if task.get("status") != "completed":
+            raise ValueError("Task must be completed before generating custom clips")
+
+        normalized_types: list[str] = []
+        for clip_type in clip_types:
+            if clip_type in ("micro_hook", "deep_context") and clip_type not in normalized_types:
+                normalized_types.append(clip_type)
+        if not normalized_types:
+            raise ValueError("Select at least one clip format")
+
+        transcript, video_path = await self._resolve_task_transcript_and_video(task)
+        match_result = await find_segment_by_user_query(
+            transcript,
+            query,
+            normalized_types,  # type: ignore[arg-type]
+        )
+
+        existing_clips = await self.clip_repo.get_clips_by_task(self.db, task_id)
+        clip_order_start = max(
+            (clip.get("clip_order", 0) for clip in existing_clips),
+            default=0,
+        )
+        existing_ids = list(task.get("generated_clips_ids") or [])
+        if not existing_ids and existing_clips:
+            existing_ids = [clip["id"] for clip in existing_clips]
+
+        clips_output_dir = Path(self.config.temp_dir) / "clips"
+        clips_output_dir.mkdir(parents=True, exist_ok=True)
+
+        output_format = "vertical"
+        add_subtitles = True
+        total = len(match_result.variants)
+        new_ids = list(existing_ids)
+        created = 0
+
+        for index, variant in enumerate(match_result.variants):
+            segment = variant.segment
+            assessment = (
+                f"Custom clip · {variant.clip_type.replace('_', ' ')} · "
+                f"Match {int(variant.match_confidence * 100)}% · "
+                f"{variant.quality_verdict}: "
+                f"{variant.quality_reasoning or segment.reasoning}"
+            )
+            segment_dict = {
+                "start_time": segment.start_time,
+                "end_time": segment.end_time,
+                "text": segment.text,
+                "relevance_score": variant.match_confidence,
+                "reasoning": assessment,
+                "virality_score": segment.virality.total_score if segment.virality else 0,
+                "hook_score": segment.virality.hook_score if segment.virality else 0,
+                "engagement_score": segment.virality.engagement_score if segment.virality else 0,
+                "value_score": segment.virality.value_score if segment.virality else 0,
+                "shareability_score": segment.virality.shareability_score if segment.virality else 0,
+                "hook_type": segment.virality.hook_type if segment.virality else None,
+            }
+
+            clip_info = await self.video_service.create_single_clip(
+                video_path,
+                segment_dict,
+                len(existing_clips) + index,
+                clips_output_dir,
+                font_family,
+                font_size,
+                font_color,
+                caption_template,
+                output_format,
+                add_subtitles,
+            )
+            if clip_info is None:
+                continue
+
+            clip_id = await self.clip_repo.create_clip(
+                self.db,
+                task_id=task_id,
+                filename=clip_info["filename"],
+                file_path=clip_info["path"],
+                start_time=clip_info["start_time"],
+                end_time=clip_info["end_time"],
+                duration=clip_info["duration"],
+                text=clip_info.get("text", ""),
+                relevance_score=clip_info.get("relevance_score", 0.0),
+                reasoning=clip_info.get("reasoning", ""),
+                clip_order=clip_order_start + index + 1,
+                virality_score=clip_info.get("virality_score", 0),
+                hook_score=clip_info.get("hook_score", 0),
+                engagement_score=clip_info.get("engagement_score", 0),
+                value_score=clip_info.get("value_score", 0),
+                shareability_score=clip_info.get("shareability_score", 0),
+                hook_type=clip_info.get("hook_type"),
+            )
+            await self.db.commit()
+            new_ids.append(clip_id)
+            created += 1
+            await self.task_repo.update_task_clips(self.db, task_id, new_ids)
+
+            if clip_ready_callback:
+                clip_record = await self.clip_repo.get_clip_by_id(self.db, clip_id)
+                if clip_record:
+                    await clip_ready_callback(index, total, clip_record)
+
+        if created == 0:
+            raise RuntimeError("Failed to render custom clips")
+
+        return {
+            "clips_created": created,
+            "expected_clip_count": total,
+        }

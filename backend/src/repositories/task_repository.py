@@ -26,7 +26,6 @@ class TaskRepository:
         font_size: int = 24,
         font_color: str = "#FFFFFF",
         caption_template: str = "default",
-        include_broll: bool = False,
         processing_mode: str = "fast",
     ) -> str:
         """Create a new task and return its ID."""
@@ -55,7 +54,7 @@ class TaskRepository:
                     "font_size": font_size,
                     "font_color": font_color,
                     "caption_template": caption_template,
-                    "include_broll": include_broll,
+                    "include_broll": False,
                     "processing_mode": processing_mode,
                 },
             )
@@ -135,7 +134,6 @@ class TaskRepository:
             "font_size": row.font_size,
             "font_color": row.font_color,
             "caption_template": getattr(row, "caption_template", "default"),
-            "include_broll": getattr(row, "include_broll", False),
             "processing_mode": getattr(row, "processing_mode", "fast"),
             "cache_hit": getattr(row, "cache_hit", False),
             "error_code": getattr(row, "error_code", None),
@@ -237,7 +235,6 @@ class TaskRepository:
         font_size: int,
         font_color: str,
         caption_template: str,
-        include_broll: bool,
     ) -> None:
         """Update task styling settings."""
         try:
@@ -249,7 +246,6 @@ class TaskRepository:
                         font_size = :font_size,
                         font_color = :font_color,
                         caption_template = :caption_template,
-                        include_broll = :include_broll,
                         updated_at = NOW()
                     WHERE id = :task_id
                     """
@@ -260,7 +256,6 @@ class TaskRepository:
                     "font_size": font_size,
                     "font_color": font_color,
                     "caption_template": caption_template,
-                    "include_broll": include_broll,
                 },
             )
         except Exception:

@@ -46,13 +46,3 @@ export function previewDisplayFontSize(
 ): number {
   return Math.max(8, baseFontSize * (previewHeight / outputHeight));
 }
-
-/** @deprecated Use previewDisplayFontSize for upload preview. */
-export function previewFontSize(
-  baseFontSize: number,
-  previewWidth: number,
-  words: string[],
-): number {
-  const maxWidth = Math.floor(previewWidth * 0.88);
-  return fitPhraseFontSize(words, baseFontSize, maxWidth);
-}

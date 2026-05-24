@@ -78,6 +78,8 @@
   --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
   --sidebar-border: oklch(0.923 0.003 48.717);
   --sidebar-ring: oklch(0.709 0.01 56.259);
+  --loader-dot-a: oklch(0.55 0.12 162);
+  --loader-dot-b: oklch(0.55 0.2 16);
 }
 
 .dark {
@@ -112,6 +114,65 @@
   --sidebar-accent-foreground: oklch(0.93 0.004 285);
   --sidebar-border: oklch(1 0 0 / 11%);
   --sidebar-ring: oklch(0.55 0.02 285);
+  --loader-dot-a: var(--chart-2);
+  --loader-dot-b: var(--chart-5);
+}
+
+.corner-orbit-loader {
+  width: 20px;
+  aspect-ratio: 1;
+  position: relative;
+}
+
+.corner-orbit-loader::before,
+.corner-orbit-loader::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin: -4px 0 0 -4px;
+  width: 8px;
+  aspect-ratio: 1;
+  background: var(--loader-dot-a);
+  animation: corner-orbit-path 2s infinite, corner-orbit-pulse 1s infinite;
+}
+
+.corner-orbit-loader::after {
+  background: var(--loader-dot-b);
+  animation-delay: -1s, 0s;
+}
+
+@keyframes corner-orbit-path {
+  0% {
+    top: 0;
+    left: 0;
+  }
+  25% {
+    top: 0;
+    left: 100%;
+  }
+  50% {
+    top: 100%;
+    left: 100%;
+  }
+  75% {
+    top: 100%;
+    left: 0;
+  }
+  100% {
+    top: 0;
+    left: 0;
+  }
+}
+
+@keyframes corner-orbit-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.65);
+  }
 }
 
 @layer base {

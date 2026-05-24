@@ -37,7 +37,6 @@ Available creation options on this screen include:
 - Font size
 - Font color
 - Caption template
-- Include B-roll
 - Output format
   - `vertical`
   - `original`
@@ -47,7 +46,6 @@ Additional behavior:
 
 - Loads available fonts from the backend
 - Loads caption templates from the backend
-- Checks whether B-roll is configured
 - Loads the latest task for the signed-in user
 - Loads billing summary when monetization is enabled
 
@@ -217,10 +215,6 @@ Custom font upload is also supported through the media API. In monetized setups,
 ### Caption templates
 
 Caption templates are exposed by the backend and loaded into the frontend task creation and editing flows.
-
-### B-roll
-
-B-roll is optional and depends on `PEXELS_API_KEY`. The frontend checks whether it is available before presenting it as a real option.
 
 ### Output format
 

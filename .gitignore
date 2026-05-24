@@ -8,3 +8,13 @@ temp/
 *.m4a
 frontend/e2e/.seed.json
 backend/fixtures/riverside-framing/test_slice.mp4
+
+# Dev media / processing sidecars at repo root
+/*.mp4
+/*.transcript_cache.json
+/*.speaker_panel_cache.json
+.cron/
+cron_update.log
+backend/.coverage
+backend/htmlcov/
+backend/.pytest_cache/

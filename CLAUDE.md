@@ -38,25 +38,24 @@ arq src.workers.tasks.WorkerSettings
 
 ### Frontend (local)
 
+Uses `bun` (same as Docker). Requires Node 20+.
+
 ```bash
 cd frontend
-npm install
-npm run dev          # Dev server with Turbopack
-npm run build        # Prisma generate + Next.js build
-npm run lint
+bun install
+bun run dev          # Dev server with Turbopack
+bun run build        # Prisma generate + Next.js build
+bun run lint
 ```
 
-### Waitlist
+### Tests
 
 ```bash
-cd waitlist
-bun install          # Uses bun, not npm
-bun run dev
+make test                              # backend pytest + frontend vitest + e2e
+cd backend && uv run pytest            # backend only
+cd frontend && bun run test:coverage   # frontend unit tests
+cd frontend && bun run test:e2e       # Playwright smoke tests
 ```
-
-### No tests
-
-The project currently has no test files.
 
 ## Architecture
 
@@ -72,7 +71,7 @@ Task creation returns immediately (<100ms). Video processing happens asynchronou
 
 ### Backend: Layered Architecture
 
-The backend was refactored from monolithic (`main.py`, legacy) to layered (`main_refactored.py`, active):
+The backend uses a layered architecture (`main_refactored.py` entry point):
 
 ```
 api/routes/          → HTTP handlers (tasks.py, media.py)
@@ -98,7 +97,6 @@ utils/               → Thread pool helpers for blocking operations (async_help
    - Word-synced subtitles from AssemblyAI
    - Custom fonts (TTF files in `backend/fonts/`)
    - Optional transition effects (`backend/transitions/`)
-   - Optional B-roll overlays (Pexels API)
    - Caption templates with animation styles
 5. **Storage** → Clips to `{TEMP_DIR}/clips/`, metadata to PostgreSQL
 
@@ -126,26 +124,24 @@ PostgreSQL 15. Schema in `init.sql`. Mixed naming conventions:
 
 | File | Purpose |
 |------|---------|
-| `src/main_refactored.py` | Active FastAPI entry point (129 lines) |
-| `src/main.py` | Legacy monolithic entry point (do not use for new work) |
-| `src/api/routes/tasks.py` | Task CRUD, SSE progress, clip editing endpoints (711 lines) |
+| `src/main_refactored.py` | Active FastAPI entry point |
+| `src/api/routes/tasks.py` | Task CRUD, SSE progress, clip editing, custom clip generation |
 | `src/api/routes/media.py` | Fonts, transitions, uploads, templates |
 | `src/services/task_service.py` | Task orchestration, clip editing logic (574 lines) |
 | `src/services/video_service.py` | Video download, transcription, AI analysis, clip generation |
-| `src/workers/tasks.py` | ARQ worker task definitions |
+| `src/workers/tasks.py` | ARQ worker: `process_video_task`, `generate_clips_from_query_task` |
 | `src/workers/job_queue.py` | Job queue management |
 | `src/workers/progress.py` | Real-time progress via Redis |
 | `src/ai.py` | Pydantic AI agents, system prompt, segment validation |
 | `src/video_utils.py` | Video processing, cropping, subtitles (~820 lines) |
 | `src/clip_editor.py` | Clip trim, split, merge, export presets |
-| `src/broll.py` | Pexels API B-roll integration |
 | `src/caption_templates.py` | Caption template system |
 | `src/config.py` | Environment variable configuration |
 
 ## API Endpoints (routes in `api/routes/`)
 
 **Task lifecycle:**
-- `POST /start-with-progress` — Create task, enqueue to worker (returns task_id)
+- `POST /tasks/` — Create task, enqueue to worker (returns task_id)
 - `GET /tasks/` — List user tasks
 - `GET /tasks/{id}` — Get task with clips
 - `GET /tasks/{id}/progress` — SSE real-time progress stream
@@ -158,16 +154,17 @@ PostgreSQL 15. Schema in `init.sql`. Mixed naming conventions:
 - `POST /tasks/{id}/clips/{clip_id}/split` — Split at timestamp
 - `POST /tasks/{id}/clips/merge` — Merge selected clips
 - `PATCH /tasks/{id}/clips/{clip_id}/captions` — Update captions
+- `POST /tasks/{id}/clips/generate-from-query` — Find + render custom clip(s) from user query
 - `GET /tasks/{id}/clips/{clip_id}/export?preset=tiktok` — Export with platform preset
 
 **Media:**
-- `GET /fonts`, `GET /transitions`, `GET /caption-templates`, `GET /broll/status`
+- `GET /fonts`, `GET /transitions`, `GET /caption-templates`
 - `POST /upload` — Upload video file
 - `GET /clips/{filename}` — Serve generated clips
 
 ## Environment Variables
 
-Required in `.env` (root) or `backend/.env`:
+Required in `.env` (root):
 
 ```bash
 ASSEMBLY_AI_API_KEY=...              # Required: video transcription
@@ -177,7 +174,6 @@ OLLAMA_BASE_URL=http://localhost:11434/v1  # Optional for ollama:* models
 OLLAMA_API_KEY=...                   # Optional; required for Ollama Cloud
 
 # Optional
-PEXELS_API_KEY=...                   # B-roll stock footage
 REDIS_HOST=localhost                 # Default: localhost
 REDIS_PORT=6379                      # Default: 6379
 QUEUED_TASK_TIMEOUT_SECONDS=180      # Fail-safe for stuck tasks

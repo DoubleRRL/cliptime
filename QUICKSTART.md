@@ -45,7 +45,7 @@ LLM=openai:gpt-4
 # LLM=ollama:gpt-oss:20b
 # OLLAMA_BASE_URL=http://localhost:11434/v1
 
-# Optional: Resend for waitlist + subscription lifecycle emails
+# Optional: Resend for subscription lifecycle emails
 # Required if you want hosted billing emails when SELF_HOST=false
 # RESEND_API_KEY=your_resend_api_key_here
 # RESEND_FROM_EMAIL="SupoClip <onboarding@your-domain.com>"
@@ -94,13 +94,12 @@ docker-compose up -d --build
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WHISPER_MODEL_SIZE` | `medium` | Whisper model size (tiny/base/small/medium/large) |
 | `BETTER_AUTH_SECRET` | dev secret | Auth secret (change in production!) |
 | `GOOGLE_API_KEY` | - | For Google Gemini models |
 | `ANTHROPIC_API_KEY` | - | For Claude models |
 | `OLLAMA_BASE_URL` | `http://localhost:11434/v1` | For local/self-hosted Ollama endpoint |
 | `OLLAMA_API_KEY` | - | Optional, required for Ollama Cloud |
-| `RESEND_API_KEY` | - | Optional in self-host mode, required for hosted billing/waitlist emails |
+| `RESEND_API_KEY` | - | Optional in self-host mode, required for hosted billing emails |
 | `RESEND_FROM_EMAIL` | `SupoClip <onboarding@resend.dev>` | Verified sender for backend subscription emails |
 
 ### Hosted Billing Email Setup

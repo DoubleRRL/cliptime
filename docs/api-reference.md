@@ -65,13 +65,6 @@ These routes generally attach session context and then proxy or orchestrate back
 - `GET /admin`
   - Admin dashboard page
 
-### Waitlist
-
-- `POST /api/waitlist`
-  - Waitlist submission endpoint
-
-The route exists in the frontend, even though the separate `waitlist/` application mentioned in older docs is not present in this repository snapshot.
-
 ## Backend Route Groups
 
 ## Task Routes
@@ -119,6 +112,8 @@ Source file:
   - Re-render a clip
 - `GET /{task_id}/clips/{clip_id}/export`
   - Export using a platform preset
+- `POST /{task_id}/clips/generate-from-query`
+  - Find and render custom clip(s) from a natural-language query
 
 ### Task-wide settings and diagnostics
 
@@ -150,8 +145,6 @@ Source file:
   - List available transitions
 - `GET /caption-templates`
   - List available subtitle template definitions
-- `GET /broll/status`
-  - Whether B-roll integration is configured
 - `POST /upload`
   - Upload a source video
 
