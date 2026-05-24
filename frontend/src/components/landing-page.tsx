@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { motion } from "motion/react";
 import { motionSpring } from "@/components/motion-primitives";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -238,6 +239,7 @@ export default function LandingPage() {
 
           {/* Desktop auth buttons */}
           <div className="hidden md:flex items-center gap-3">
+            <ThemeToggle />
             {authEnabled ? (
               <>
                 <Link href="/sign-in">
@@ -260,15 +262,18 @@ export default function LandingPage() {
           </div>
 
           {/* Mobile hamburger */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setMobileNavOpen(!mobileNavOpen)}
-            className="md:hidden p-2"
-            aria-label="Toggle menu"
-          >
-            {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-          </Button>
+          <div className="flex items-center gap-2 md:hidden">
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMobileNavOpen(!mobileNavOpen)}
+              className="p-2"
+              aria-label="Toggle menu"
+            >
+              {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </Button>
+          </div>
         </div>
 
         {/* Mobile nav dropdown */}

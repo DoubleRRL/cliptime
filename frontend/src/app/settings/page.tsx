@@ -15,6 +15,7 @@ import { signOut, useSession } from "@/lib/auth-client";
 import { track } from "@/lib/datafast";
 import Link from "next/link";
 import { Type, Palette, CheckCircle, AlertCircle, Settings, ArrowLeft, Mail } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface UserPreferences {
   fontFamily: string;
@@ -277,6 +278,7 @@ export default function SettingsPage() {
             </Link>
 
             <div className="flex items-center gap-3">
+              <ThemeToggle />
               {isAdmin && (
                 <Link href="/admin">
                   <Button variant="outline" size="sm">

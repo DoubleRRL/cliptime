@@ -26,6 +26,7 @@ import { previewDisplayFontSize } from "@/lib/caption-fit";
 import { type SpeakerPanel } from "@/lib/preview-crop";
 import { isLandingOnlyModeEnabled } from "@/lib/app-flags";
 import { MotionFadeIn } from "@/components/motion-primitives";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { motion, AnimatePresence } from "motion/react";
 
 const DEFAULT_PROCESSING_MODE =
@@ -895,6 +896,7 @@ export default function Home() {
                   </Button>
                 </Link>
               )}
+              <ThemeToggle />
               <Button variant="outline" size="sm" onClick={handleSignOut}>
                 Sign Out
               </Button>
@@ -925,6 +927,7 @@ export default function Home() {
                   {billingSummary.plan === "pro" ? "Pro" : "Free"}
                 </Badge>
               )}
+              <ThemeToggle />
               <Button
                 variant="ghost"
                 size="sm"

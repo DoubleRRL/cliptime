@@ -57,6 +57,7 @@ import { Progress } from "@/components/ui/progress";
 import Link from "next/link";
 import DynamicVideoPlayer from "@/components/dynamic-video-player";
 import { MotionCard, MotionNumber } from "@/components/motion-primitives";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface Clip {
   id: string;
@@ -681,13 +682,14 @@ export default function TaskPage() {
       {/* Header */}
       <div className="border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-4 py-6">
-          <div className="flex items-center gap-4 mb-4">
+          <div className="flex items-center justify-between gap-4 mb-4">
             <Link href="/">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="w-4 h-4" />
                 Back
               </Button>
             </Link>
+            <ThemeToggle />
           </div>
 
           {task && (

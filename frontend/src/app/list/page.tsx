@@ -40,6 +40,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { MotionFadeIn } from "@/components/motion-primitives";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface Task {
   id: string;
@@ -390,13 +391,14 @@ export default function ListPage() {
       {/* ── Page header ──────────────────────────────────────── */}
       <div className="border-b border-border bg-card">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center justify-between gap-3 mb-4">
             <Link href="/">
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="w-4 h-4" />
                 Back
               </Button>
             </Link>
+            <ThemeToggle />
           </div>
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
