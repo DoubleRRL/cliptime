@@ -4,7 +4,6 @@ PIL-based subtitle rendering helpers for premium / Riverside-style captions.
 
 from __future__ import annotations
 
-import math
 from typing import Dict, List, Optional, Tuple
 
 from PIL import Image, ImageDraw, ImageFont
@@ -83,29 +82,32 @@ def _measure_line(
     template: Dict,
     font_path: str,
     base_size: int,
-) -> Tuple[int, int, List[Tuple[str, int, int, int, int, bool]]]:
-    """Return line width, height, and word layout entries."""
+) -> Tuple[int, int, int, List[Tuple[str, int, ImageFont.FreeTypeFont | ImageFont.ImageFont, bool]]]:
+    """Return line width, height, max ascent, and word layout entries."""
     spacing = int(base_size * 0.22)
     font = _load_font(font_path, base_size)
     active_font = _load_font(font_path, int(base_size * 1.08))
 
-    entries: List[Tuple[str, int, int, int, int, bool]] = []
+    entries: List[Tuple[str, int, ImageFont.FreeTypeFont | ImageFont.ImageFont, bool]] = []
     total_w = 0
-    max_h = base_size
+    max_ascent = 0
+    max_descent = 0
 
     for i, word in enumerate(line_words):
         global_idx = line_start_idx + i
         is_active = global_idx == active_global_idx
         text = format_word_text(word, template)
         fnt = active_font if is_active else font
-        bbox = fnt.getbbox(text)
+        ascent, descent = fnt.getmetrics()
+        max_ascent = max(max_ascent, ascent)
+        max_descent = max(max_descent, descent)
+        bbox = fnt.getbbox(text, anchor="ls")
         w = bbox[2] - bbox[0]
-        h = bbox[3] - bbox[1]
-        max_h = max(max_h, h)
-        entries.append((text, w, h, bbox[0], bbox[1], is_active))
+        entries.append((text, w, fnt, is_active))
         total_w += w + (spacing if i < len(line_words) - 1 else 0)
 
-    return total_w, max_h, entries
+    line_h = max_ascent + max_descent
+    return total_w, line_h, max_ascent, entries
 
 
 def render_pill_phrase_image(
@@ -129,10 +131,10 @@ def render_pill_phrase_image(
     text_rgb = _hex_to_rgb(template.get("font_color", "#FFFFFF"))
 
     lines = _split_phrase_lines(words, max_per_line=4)
-    line_layouts: List[Tuple[int, int, List]] = []
+    line_layouts: List[Tuple[int, int, int, List]] = []
     line_start = 0
     for line in lines:
-        lw, lh, entries = _measure_line(
+        lw, lh, max_ascent, entries = _measure_line(
             line, active_idx, line_start, template, font_path, base_size
         )
         if lw > max_width and base_size > 20:
@@ -144,14 +146,14 @@ def render_pill_phrase_image(
                 video_width,
                 max_width,
             )
-        line_layouts.append((lw, lh, entries))
+        line_layouts.append((lw, lh, max_ascent, entries))
         line_start += len(line)
 
     line_gap = int(base_size * 0.35)
     pad_x = int(base_size * 0.55)
     pad_y = int(base_size * 0.35)
-    content_w = max(lw for lw, _, _ in line_layouts)
-    content_h = sum(lh for _, lh, _ in line_layouts) + line_gap * (len(line_layouts) - 1)
+    content_w = max(lw for lw, _, _, _ in line_layouts)
+    content_h = sum(lh for _, lh, _, _ in line_layouts) + line_gap * (len(line_layouts) - 1)
 
     img_w = min(video_width, content_w + pad_x * 2)
     img_h = content_h + pad_y * 2
@@ -166,31 +168,29 @@ def render_pill_phrase_image(
     )
 
     font = _load_font(font_path, base_size)
-    active_font = _load_font(font_path, int(base_size * 1.08))
     spacing = int(base_size * 0.22)
     hl_pad_x = max(4, int(base_size * 0.12))
     hl_pad_y = max(2, int(base_size * 0.08))
 
     y = pad_y
-    line_start = 0
-    for line_words, (lw, lh, entries) in zip(lines, line_layouts):
+    for _, (lw, lh, max_ascent, entries) in zip(lines, line_layouts):
+        baseline_y = y + max_ascent
         x = (img_w - lw) // 2
-        for i, (text, w, h, bx0, by0, is_active) in enumerate(entries):
-            fnt = active_font if is_active else font
+        for text, w, fnt, is_active in entries:
             if is_active:
-                hl_x1 = x - hl_pad_x
-                hl_y1 = y - hl_pad_y
-                hl_x2 = x + w + hl_pad_x
-                hl_y2 = y + h + hl_pad_y
+                bbox = draw.textbbox((x, baseline_y), text, font=fnt, anchor="ls")
+                hl_x1 = bbox[0] - hl_pad_x
+                hl_y1 = bbox[1] - hl_pad_y
+                hl_x2 = bbox[2] + hl_pad_x
+                hl_y2 = bbox[3] + hl_pad_y
                 draw.rounded_rectangle(
                     [(hl_x1, hl_y1), (hl_x2, hl_y2)],
                     radius=max(4, int(base_size * 0.2)),
                     fill=highlight_rgba,
                 )
-            draw.text((x - bx0, y - by0), text, font=fnt, fill=text_rgb)
+            draw.text((x, baseline_y), text, font=fnt, fill=text_rgb, anchor="ls")
             x += w + spacing
         y += lh + line_gap
-        line_start += len(line_words)
 
     return image
 
