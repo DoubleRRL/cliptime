@@ -4,13 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
 import { previewDisplayFontSize } from "@/lib/caption-fit";
-import { buildPreviewCaptionStyles } from "@/lib/caption-preview-styles";
+import { buildPreviewCaptionStyles, hexToRgba } from "@/lib/caption-preview-styles";
 import { cropToBackgroundStyle, panelToVerticalCrop, type SpeakerPanel } from "@/lib/preview-crop";
 
 export interface CaptionTemplatePreview {
   id: string;
   animation?: string;
   highlight_color?: string;
+  background_color?: string;
+  pill_style?: boolean;
   stroke_color?: string | null;
   stroke_width?: number;
   position_y?: number;
@@ -28,6 +30,8 @@ interface UploadCaptionPreviewProps {
   fontFamily: string;
   fontSize: number;
   fontColor: string;
+  highlightColor?: string;
+  pillColor?: string;
   template: CaptionTemplatePreview | null;
   isLoading?: boolean;
   error?: string | null;
@@ -71,6 +75,8 @@ export default function UploadCaptionPreview({
   fontFamily,
   fontSize,
   fontColor,
+  highlightColor: highlightColorProp,
+  pillColor: pillColorProp,
   template,
   isLoading = false,
   error = null,
@@ -95,7 +101,9 @@ export default function UploadCaptionPreview({
   const positionY = template?.position_y ?? 0.75;
   const strokeWidth = template?.stroke_width ?? 0;
   const strokeColor = template?.stroke_color ?? "#000000";
-  const highlightColor = template?.highlight_color ?? "#FFD700";
+  const highlightColor = highlightColorProp ?? template?.highlight_color ?? "#8B5CF6";
+  const pillColor = pillColorProp ?? template?.background_color ?? "#1A1A1ACC";
+  const pillStyle = Boolean(template?.pill_style);
   const words = useMemo(() => buildCaptionText(template), [template]);
   const showKaraoke = template?.animation === "karaoke" && !isAdjustingSize;
 
@@ -113,6 +121,7 @@ export default function UploadCaptionPreview({
     strokeWidth,
     strokeColor,
     shadow: template?.shadow ?? false,
+    pillStyle,
   });
 
   useEffect(() => {
@@ -134,15 +143,14 @@ export default function UploadCaptionPreview({
       )}
 
       <style>{`
-        @keyframes captionWordBounce {
+        @keyframes captionWordPop {
           0% { transform: scale(1); }
-          35% { transform: scale(1.22); }
-          65% { transform: scale(1.08); }
+          40% { transform: scale(1.12); }
           100% { transform: scale(1); }
         }
         .caption-active-word {
           display: inline-block;
-          animation: captionWordBounce 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+          animation: captionWordPop 0.18s ease-out;
         }
       `}</style>
 
@@ -182,12 +190,19 @@ export default function UploadCaptionPreview({
               <div
                 style={{
                   ...captionStyle,
-                  display: "flex",
+                  display: "inline-flex",
                   flexWrap: "wrap",
                   justifyContent: "center",
-                  gap: "0.25em",
+                  gap: pillStyle ? "0.15em" : "0.25em",
                   maxWidth: "88%",
                   margin: "0 auto",
+                  ...(pillStyle
+                    ? {
+                        backgroundColor: hexToRgba(pillColor, "rgba(26,26,26,0.8)"),
+                        borderRadius: `${Math.max(8, displayFontSize * 0.45)}px`,
+                        padding: `${displayFontSize * 0.28}px ${displayFontSize * 0.5}px`,
+                      }
+                    : {}),
                 }}
               >
                 {words.map((word, index) => {
@@ -195,11 +210,16 @@ export default function UploadCaptionPreview({
                   return (
                     <span
                       key={`${word}-${index}`}
-                      className={isActive ? "caption-active-word" : undefined}
+                      className={isActive && !pillStyle ? "caption-active-word" : isActive ? "caption-active-word" : undefined}
                       style={{
-                        color: isActive ? highlightColor : fontColor,
+                        color: fontColor,
                         whiteSpace: "nowrap",
-                        transition: "color 0.12s ease-out",
+                        borderRadius: pillStyle ? `${Math.max(4, displayFontSize * 0.18)}px` : undefined,
+                        padding: pillStyle ? "0.05em 0.2em" : undefined,
+                        backgroundColor:
+                          pillStyle && isActive
+                            ? highlightColor
+                            : "transparent",
                       }}
                     >
                       {word}

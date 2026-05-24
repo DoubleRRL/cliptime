@@ -155,7 +155,7 @@ def overlay_custom_captions(
         }.get(position, int(base_clip.h * 0.78))
 
         highlighted = {w.strip().lower() for w in highlight_words if w.strip()}
-        template = get_template("opusclip")
+        template = get_template("riverside")
         from .subtitle_compositor import format_word_text
 
         word_duration = max(base_clip.duration / max(len(words), 1), 0.1)

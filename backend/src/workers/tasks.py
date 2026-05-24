@@ -22,10 +22,12 @@ async def process_video_task(
     font_family: str = "TikTokSans-Regular",
     font_size: int = 24,
     font_color: str = "#FFFFFF",
-    caption_template: str = "opusclip",
+    caption_template: str = "riverside",
     processing_mode: str = "quality",
     output_format: str = "vertical",
     add_subtitles: bool = True,
+    highlight_color: str = "#8B5CF6",
+    background_color: str = "#1A1A1ACC",
     cleanup_settings: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """
@@ -86,6 +88,8 @@ async def process_video_task(
                 processing_mode=processing_mode,
                 output_format=output_format,
                 add_subtitles=add_subtitles,
+                highlight_color=highlight_color,
+                background_color=background_color,
                 progress_callback=update_progress,
                 should_cancel=should_cancel,
                 clip_ready_callback=clip_ready_callback,

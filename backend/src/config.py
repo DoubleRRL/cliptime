@@ -79,7 +79,7 @@ class Config:
             "FAST_MODE_TRANSCRIPT_MODEL", "nano"
         )
         self.default_caption_template = os.getenv(
-            "DEFAULT_CAPTION_TEMPLATE", "opusclip"
+            "DEFAULT_CAPTION_TEMPLATE", "riverside"
         )
         self.transcript_window_seconds = int(
             os.getenv("TRANSCRIPT_WINDOW_SECONDS", "300")

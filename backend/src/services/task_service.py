@@ -151,6 +151,8 @@ class TaskService:
         processing_mode: str = "quality",
         output_format: str = "vertical",
         add_subtitles: bool = True,
+        highlight_color: str = "#8B5CF6",
+        background_color: str = "#1A1A1ACC",
         progress_callback: Optional[Callable] = None,
         should_cancel: Optional[Callable] = None,
         clip_ready_callback: Optional[Callable] = None,
@@ -273,6 +275,8 @@ class TaskService:
                     caption_template,
                     output_format,
                     add_subtitles,
+                    highlight_color,
+                    background_color,
                 )
                 if clip_info is None:
                     continue  # Skip failed clip

@@ -35,7 +35,10 @@ const PROCESSING_MODE_OPTIONS = [
   { id: "quality", name: "Quality", description: "Most clips, full analysis (slowest)" },
 ] as const;
 const DEFAULT_CAPTION_TEMPLATE =
-  process.env.NEXT_PUBLIC_DEFAULT_CAPTION_TEMPLATE || "opusclip";
+  process.env.NEXT_PUBLIC_DEFAULT_CAPTION_TEMPLATE || "riverside";
+
+const PILL_COLOR_PRESETS = ["#1A1A1ACC", "#000000CC", "#2D2D2DCC", "#1E3A5FCC"] as const;
+const HIGHLIGHT_COLOR_PRESETS = ["#8B5CF6", "#FFB800", "#FE2C55", "#22C55E", "#3B82F6"] as const;
 
 const PREVIEW_SAMPLE_WORDS = ["HOW", "YOUR", "CAPTIONS", "LOOK"];
 const PREVIEW_HEIGHT = 480;
@@ -78,6 +81,8 @@ interface CaptionTemplateOption {
   font_size?: number;
   font_color?: string;
   highlight_color?: string;
+  background_color?: string;
+  pill_style?: boolean;
   stroke_color?: string | null;
   stroke_width?: number;
   position_y?: number;
@@ -89,6 +94,8 @@ interface SubtitlePresetSnapshot {
   fontFamily: string;
   fontSize: number;
   fontColor: string;
+  highlightColor: string;
+  pillColor: string;
   captionTemplate: string;
 }
 
@@ -100,6 +107,8 @@ function subtitlePresetMatches(
     a.fontFamily === b.fontFamily &&
     a.fontSize === b.fontSize &&
     a.fontColor === b.fontColor &&
+    a.highlightColor === b.highlightColor &&
+    a.pillColor === b.pillColor &&
     a.captionTemplate === b.captionTemplate
   );
 }
@@ -162,6 +171,8 @@ export default function Home() {
   const [fontFamily, setFontFamily] = useState("TikTokSans-Regular");
   const [fontSize, setFontSize] = useState(24);
   const [fontColor, setFontColor] = useState("#FFFFFF");
+  const [highlightColor, setHighlightColor] = useState("#8B5CF6");
+  const [pillColor, setPillColor] = useState("#1A1A1ACC");
   const [availableFonts, setAvailableFonts] = useState<FontOption[]>([]);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(true);
   const [fontSearch, setFontSearch] = useState("");
@@ -306,6 +317,8 @@ export default function Home() {
           setFontFamily(data.fontFamily || "TikTokSans-Regular");
           setFontSize(data.fontSize || 24);
           setFontColor(data.fontColor || "#FFFFFF");
+          setHighlightColor(data.highlightColor || "#8B5CF6");
+          setPillColor(data.pillColor || "#1A1A1ACC");
           if (data.captionTemplate) {
             setCaptionTemplate(data.captionTemplate);
           }
@@ -327,6 +340,8 @@ export default function Home() {
       fontFamily,
       fontSize,
       fontColor,
+      highlightColor,
+      pillColor,
       captionTemplate,
     };
 
@@ -339,6 +354,8 @@ export default function Home() {
     fontFamily,
     fontSize,
     fontColor,
+    highlightColor,
+    pillColor,
     captionTemplate,
     isDefaultPresetActive,
     savedPresetSnapshot,
@@ -525,6 +542,12 @@ export default function Home() {
     if (selectedTemplate.font_color) {
       setFontColor(selectedTemplate.font_color);
     }
+    if (selectedTemplate.highlight_color) {
+      setHighlightColor(selectedTemplate.highlight_color);
+    }
+    if (selectedTemplate.background_color) {
+      setPillColor(selectedTemplate.background_color);
+    }
   };
 
   const handleSaveSubtitlePreset = async (checked: boolean) => {
@@ -546,6 +569,8 @@ export default function Home() {
       fontFamily,
       fontSize,
       fontColor,
+      highlightColor,
+      pillColor,
       captionTemplate,
     };
 
@@ -553,7 +578,14 @@ export default function Home() {
       const response = await fetch("/api/preferences", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(snapshot),
+        body: JSON.stringify({
+          fontFamily: snapshot.fontFamily,
+          fontSize: snapshot.fontSize,
+          fontColor: snapshot.fontColor,
+          highlightColor: snapshot.highlightColor,
+          pillColor: snapshot.pillColor,
+          captionTemplate: snapshot.captionTemplate,
+        }),
       });
 
       if (!response.ok) {
@@ -726,7 +758,9 @@ export default function Home() {
           font_options: {
             font_family: fontFamily,
             font_size: fontSize,
-            font_color: normalizedColor
+            font_color: normalizedColor,
+            highlight_color: highlightColor,
+            background_color: pillColor,
           },
           caption_template: captionTemplate,
           include_broll: includeBroll,
@@ -1178,6 +1212,82 @@ export default function Home() {
                     </Select>
                   </div>
 
+                  {activeCaptionTemplate?.pill_style && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-sm text-stone-600 flex items-center gap-1.5">
+                          <Palette className="w-3.5 h-3.5" />
+                          Pill background
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={pillColor.slice(0, 7)}
+                            onChange={(e) => setPillColor(`${e.target.value}CC`)}
+                            disabled={isLoading}
+                            className="w-10 h-8 rounded border border-stone-300 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                          <Input
+                            type="text"
+                            value={pillColor}
+                            onChange={(e) => setPillColor(e.target.value)}
+                            disabled={isLoading}
+                            className="flex-1 h-8 text-xs"
+                          />
+                        </div>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {PILL_COLOR_PRESETS.map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => setPillColor(color)}
+                              disabled={isLoading}
+                              className="w-5 h-5 rounded border-2 border-stone-300 cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
+                              style={{ backgroundColor: color.slice(0, 7) }}
+                              title={color}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm text-stone-600 flex items-center gap-1.5">
+                          <Paintbrush className="w-3.5 h-3.5" />
+                          Active word highlight
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={highlightColor.slice(0, 7)}
+                            onChange={(e) => setHighlightColor(e.target.value)}
+                            disabled={isLoading}
+                            className="w-10 h-8 rounded border border-stone-300 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                          <Input
+                            type="text"
+                            value={highlightColor}
+                            onChange={(e) => setHighlightColor(e.target.value)}
+                            disabled={isLoading}
+                            placeholder="#8B5CF6"
+                            className="flex-1 h-8 text-xs"
+                          />
+                        </div>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {HIGHLIGHT_COLOR_PRESETS.map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => setHighlightColor(color)}
+                              disabled={isLoading}
+                              className="w-5 h-5 rounded border-2 border-stone-300 cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
+                              style={{ backgroundColor: color }}
+                              title={color}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-stone-900">Processing mode</label>
                     <Select
@@ -1464,6 +1574,8 @@ export default function Home() {
                     fontFamily={fontFamily}
                     fontSize={fontSize}
                     fontColor={fontColor}
+                    highlightColor={highlightColor}
+                    pillColor={pillColor}
                     template={activeCaptionTemplate}
                     isLoading={previewLoading}
                     error={previewError}
@@ -1583,6 +1695,8 @@ export default function Home() {
                   fontFamily={fontFamily}
                   fontSize={fontSize}
                   fontColor={fontColor}
+                  highlightColor={highlightColor}
+                  pillColor={pillColor}
                   template={activeCaptionTemplate}
                   isLoading={previewLoading}
                   error={previewError}

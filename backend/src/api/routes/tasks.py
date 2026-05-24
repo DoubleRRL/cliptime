@@ -120,6 +120,12 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     )
     font_size = _normalize_font_size(font_options.get("font_size", 24))
     font_color = _normalize_font_color(font_options.get("font_color", "#FFFFFF"))
+    highlight_color = _normalize_font_color(
+        font_options.get("highlight_color", "#8B5CF6"), default="#8B5CF6"
+    )
+    background_color = font_options.get("background_color") or "#1A1A1ACC"
+    if isinstance(background_color, str) and not background_color.startswith("#"):
+        background_color = "#1A1A1ACC"
     caption_template = data.get("caption_template", config.default_caption_template)
     include_broll = data.get("include_broll", False)
     processing_mode = data.get("processing_mode", config.default_processing_mode)
@@ -174,6 +180,8 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             processing_mode,
             output_format,
             add_subtitles,
+            highlight_color,
+            background_color,
         )
 
         # Save source metadata for resume/retries in environments without sources.url column

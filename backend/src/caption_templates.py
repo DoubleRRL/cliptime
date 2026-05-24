@@ -14,14 +14,35 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "font_family": "THEBOLDFONT",
         "font_size": 28,
         "font_color": "#FFFFFF",
-        "highlight_color": "#FFD700",  # Gold for current word in karaoke mode
+        "highlight_color": "#FFD700",
         "stroke_color": "#000000",
         "stroke_width": 2,
         "background": False,
         "background_color": None,
         "animation": "none",
         "shadow": False,
-        "position_y": 0.75,  # 75% down the video
+        "position_y": 0.75,
+    },
+    "riverside": {
+        "name": "Riverside",
+        "description": "Dark pill captions with snappy word highlight (Riverside-style)",
+        "premium": True,
+        "pill_style": True,
+        "font_family": "TikTokSans-Regular",
+        "font_size": 28,
+        "font_color": "#FFFFFF",
+        "highlight_color": "#8B5CF6",
+        "background_color": "#1A1A1ACC",
+        "stroke_color": None,
+        "stroke_width": 0,
+        "background": True,
+        "animation": "karaoke",
+        "shadow": False,
+        "uppercase": False,
+        "active_word_bounce": True,
+        "active_word_scale": 1.15,
+        "bounce_duration": 0.06,
+        "position_y": 0.82,
     },
     "hormozi": {
         "name": "Hormozi",
@@ -29,11 +50,11 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "font_family": "THEBOLDFONT",
         "font_size": 36,
         "font_color": "#FFFFFF",
-        "highlight_color": "#00FF00",  # Bright green
+        "highlight_color": "#00FF00",
         "stroke_color": "#000000",
         "stroke_width": 3,
         "background": True,
-        "background_color": "#000000AA",  # Semi-transparent black
+        "background_color": "#000000AA",
         "animation": "karaoke",
         "shadow": True,
         "position_y": 0.75,
@@ -43,15 +64,15 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "description": "Large yellow text with red highlights",
         "font_family": "THEBOLDFONT",
         "font_size": 42,
-        "font_color": "#FFFF00",  # Yellow
-        "highlight_color": "#FF0000",  # Red
+        "font_color": "#FFFF00",
+        "highlight_color": "#FF0000",
         "stroke_color": "#000000",
         "stroke_width": 4,
         "background": False,
         "background_color": None,
         "animation": "pop",
         "shadow": True,
-        "position_y": 0.70,  # Slightly higher
+        "position_y": 0.70,
     },
     "minimal": {
         "name": "Minimal",
@@ -63,7 +84,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "stroke_color": None,
         "stroke_width": 0,
         "background": True,
-        "background_color": "#00000080",  # 50% transparent black
+        "background_color": "#00000080",
         "animation": "fade",
         "shadow": False,
         "position_y": 0.80,
@@ -74,7 +95,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "font_family": "TikTokSans-Regular",
         "font_size": 32,
         "font_color": "#FFFFFF",
-        "highlight_color": "#FE2C55",  # TikTok pink
+        "highlight_color": "#FE2C55",
         "stroke_color": "#000000",
         "stroke_width": 2,
         "background": False,
@@ -88,9 +109,9 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "description": "Glowing neon effect with cyan highlights",
         "font_family": "THEBOLDFONT",
         "font_size": 34,
-        "font_color": "#00FFFF",  # Cyan
-        "highlight_color": "#FF00FF",  # Magenta
-        "stroke_color": "#000066",  # Dark blue
+        "font_color": "#00FFFF",
+        "highlight_color": "#FF00FF",
+        "stroke_color": "#000066",
         "stroke_width": 2,
         "background": False,
         "background_color": None,
@@ -104,44 +125,22 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "font_family": "TikTokSans-Regular",
         "font_size": 26,
         "font_color": "#FFFFFF",
-        "highlight_color": "#FFB800",  # Warm gold
+        "highlight_color": "#FFB800",
         "stroke_color": "#333333",
         "stroke_width": 1,
         "background": True,
-        "background_color": "#1A1A1ACC",  # Dark semi-transparent
+        "background_color": "#1A1A1ACC",
         "animation": "fade",
         "shadow": False,
         "position_y": 0.78,
-    },
-    "opusclip": {
-        "name": "OpusClip Style",
-        "description": "High-impact bold yellow and green text with pop animations and emoji overlays",
-        "premium": True,
-        "uppercase": True,
-        "active_word_bounce": True,
-        "active_word_scale": 1.25,
-        "bounce_duration": 0.15,
-        "shadow_blur": 4,
-        "emoji_enabled": True,
-        "font_family": "THEBOLDFONT",
-        "font_size": 40,
-        "font_color": "#FFFFFF",
-        "highlight_color": "#FFFF00",  # Neon Yellow
-        "secondary_highlight": "#00FF00", # Neon Green for key terms
-        "stroke_color": "#000000",
-        "stroke_width": 4,           # Thick heavy black border
-        "background": False,
-        "shadow": True,
-        "shadow_color": "#000000CC",
-        "shadow_offset": (4, 4),       # Premium deep shadow
-        "animation": "karaoke",
-        "position_y": 0.65,            # Positioned perfectly below face levels
     },
 }
 
 
 def get_template(template_name: str) -> Dict[str, Any]:
     """Get a caption template by name, returns default if not found."""
+    if template_name == "opusclip":
+        template_name = "riverside"
     return CAPTION_TEMPLATES.get(template_name, CAPTION_TEMPLATES["default"])
 
 
@@ -167,11 +166,14 @@ def get_template_info() -> list:
             "font_size": template["font_size"],
             "font_color": template["font_color"],
             "highlight_color": template.get("highlight_color"),
+            "background_color": template.get("background_color"),
             "stroke_color": template.get("stroke_color"),
             "stroke_width": template.get("stroke_width", 0),
             "position_y": template.get("position_y", 0.75),
             "text_transform": "uppercase" if template.get("uppercase") else "none",
             "shadow": template.get("shadow", False),
+            "premium": template.get("premium", False),
+            "pill_style": template.get("pill_style", False),
         }
         for name, template in CAPTION_TEMPLATES.items()
     ]

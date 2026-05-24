@@ -40,7 +40,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 # Start development server with hot-reload
 # Run prisma generate first to handle volume mount scenarios where node_modules is overwritten
-CMD ["sh", "-c", "bunx prisma generate && bun run dev"]
+CMD ["sh", "-c", "bunx prisma generate && bunx prisma db execute --file scripts/ensure-db-schema.sql --schema prisma/schema.prisma && bun run dev"]
 
 # Builder stage (for production)
 FROM base AS builder

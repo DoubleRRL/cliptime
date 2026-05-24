@@ -17,7 +17,12 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-PANEL_CACHE_VERSION = 1
+PANEL_CACHE_VERSION = 4
+
+# Ignore detections in top band (Riverside "Created on Riverside" watermark).
+WATERMARK_ZONE_FRAC = 0.10
+# Riverside columns frame speakers toward the inner column edge.
+SLOT_INNER_EDGE_FRAC = 0.65
 
 
 def _detect_faces_in_frame(frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
@@ -59,7 +64,7 @@ def _detect_faces_in_frame(frame: np.ndarray) -> List[Tuple[int, int, int, int]]
 
 
 def _expand_bbox(
-    x: int, y: int, w: int, h: int, fw: int, fh: int, pad_x: float = 0.35, pad_y: float = 0.25
+    x: int, y: int, w: int, h: int, fw: int, fh: int, pad_x: float = 1.2, pad_y: float = 0.75
 ) -> Dict[str, int]:
     """Expand a face box into a speaker panel with padding, clamped to frame."""
     pad_w = int(w * pad_x)
@@ -277,22 +282,60 @@ def _slot_panels(num_speakers: int, fw: int, fh: int) -> List[Dict[str, int]]:
     return panels
 
 
-def calibrate_speaker_panels(
+def _filter_watermark_faces(
+    faces: List[Tuple[int, int, int, int]],
+    frame_h: int,
+) -> List[Tuple[int, int, int, int]]:
+    """Drop face boxes whose center sits in the top watermark band."""
+    cutoff = frame_h * WATERMARK_ZONE_FRAC
+    return [f for f in faces if (f[1] + f[3] / 2) > cutoff]
+
+
+def _slot_inner_face_cx(panel: Dict[str, int]) -> int:
+    """Heuristic face x toward the inner edge of a Riverside column."""
+    px, pw = panel["x"], panel["w"]
+    return int(px + pw * SLOT_INNER_EDGE_FRAC)
+
+
+def bind_speakers_to_columns(
+    seating_map: Dict[str, int],
+    src_w: int,
+    src_h: int,
+) -> Dict[str, Dict[str, int]]:
+    """
+    Map diarization labels to left/right Riverside columns by median face x.
+
+    Returns ``{speaker_id: panel_dict}`` with x/w/h and provisional face center.
+    """
+    if len(seating_map) < 2:
+        return {}
+
+    half_w = src_w // 2
+    left_slot = {"x": 0, "y": 0, "w": half_w, "h": src_h}
+    right_slot = {"x": half_w, "y": 0, "w": half_w, "h": src_h}
+
+    ordered = sorted(seating_map.items(), key=lambda item: item[1])
+    slots = [left_slot, right_slot]
+    panels: Dict[str, Dict[str, int]] = {}
+
+    for idx, (speaker, face_x) in enumerate(ordered[:2]):
+        slot = slots[min(idx, 1)]
+        panel = dict(slot)
+        panel["face_cx"] = int(face_x)
+        panel["face_cy"] = int(src_h * 0.38)
+        panels[str(speaker)] = panel
+
+    return panels
+
+
+def sample_speaker_seating_from_utterances(
     video_clip,
     transcript_data: Dict,
     *,
     max_samples_per_speaker: int = 4,
-) -> Dict[str, Dict[str, int]]:
-    """
-    Build ``{speaker_id: {x, y, w, h}}`` panel map from diarized utterances.
-
-    Samples face detections during each speaker's turns and takes the median
-    expanded bounding box as that speaker's fixed panel.
-    """
+) -> Dict[str, int]:
+    """Return ``{speaker_id: median_face_center_x}`` from utterance midpoints."""
     utterances = transcript_data.get("utterances") or []
-    if not utterances:
-        return {}
-
     speaker_times: Dict[str, List[float]] = {}
     for utt in utterances:
         speaker = utt.get("speaker")
@@ -306,61 +349,117 @@ def calibrate_speaker_panels(
         mid = max(0.0, min((start_s + end_s) / 2.0, video_clip.duration - 0.05))
         bucket.append(mid)
 
-    if len(speaker_times) < 2:
-        return {}
-
-    fw, fh = video_clip.size
-    panel_samples: Dict[str, List[Dict[str, int]]] = {spk: [] for spk in speaker_times}
-
+    seating: Dict[str, List[int]] = {}
     for speaker, times in speaker_times.items():
         for t in times:
             try:
                 frame = video_clip.get_frame(t)
-                faces = _detect_faces_in_frame(frame)
+                fh, _fw = frame.shape[:2]
+                faces = _filter_watermark_faces(_detect_faces_in_frame(frame), fh)
                 if not faces:
                     continue
-                # Pick face closest to horizontal slot center for this speaker
-                slot_idx = sorted(speaker_times.keys()).index(speaker)
-                slot_center_x = (slot_idx + 0.5) * (fw / len(speaker_times))
-                best = min(
-                    faces,
-                    key=lambda b: abs((b[0] + b[2] / 2) - slot_center_x),
-                )
-                panel_samples[speaker].append(_expand_bbox(*best, fw, fh))
+                best = max(faces, key=lambda b: b[2] * b[3])
+                fx, fy, fw_box, fh_box = best
+                seating.setdefault(speaker, []).append(int(fx + fw_box / 2))
+            except Exception as exc:
+                logger.debug("Seating sample failed for %s at %.2fs: %s", speaker, t, exc)
+
+    return {
+        speaker: int(np.median(xs))
+        for speaker, xs in seating.items()
+        if xs
+    }
+
+
+def _best_face_in_slot(
+    faces: List[Tuple[int, int, int, int]],
+    slot_x: int,
+    slot_w: int,
+) -> Optional[Tuple[int, int, int, int]]:
+    """Pick largest face whose center falls inside the horizontal slot."""
+    slot_x2 = slot_x + slot_w
+    in_slot = [
+        f
+        for f in faces
+        if slot_x <= f[0] + f[2] / 2 <= slot_x2
+    ]
+    candidates = in_slot or faces
+    if not candidates:
+        return None
+    return max(candidates, key=lambda b: b[2] * b[3])
+
+
+def calibrate_speaker_panels(
+    video_clip,
+    transcript_data: Dict,
+    *,
+    max_samples_per_speaker: int = 4,
+) -> Dict[str, Dict[str, int]]:
+    """
+    Build ``{speaker_id: panel}`` using spatial left/right column assignment.
+
+    Speakers are mapped to Riverside columns by median face x, not label order.
+    """
+    fw, fh = video_clip.size
+    seating_map = sample_speaker_seating_from_utterances(
+        video_clip,
+        transcript_data,
+        max_samples_per_speaker=max_samples_per_speaker,
+    )
+    if len(seating_map) < 2:
+        return {}
+
+    panels = bind_speakers_to_columns(seating_map, fw, fh)
+    if not panels:
+        return {}
+
+    speaker_times: Dict[str, List[float]] = {}
+    for utt in transcript_data.get("utterances") or []:
+        speaker = utt.get("speaker")
+        if not speaker or str(speaker) not in panels:
+            continue
+        spk = str(speaker)
+        bucket = speaker_times.setdefault(spk, [])
+        if len(bucket) >= max_samples_per_speaker:
+            continue
+        start_s = utt.get("start", 0) / 1000.0
+        end_s = utt.get("end", 0) / 1000.0
+        mid = max(0.0, min((start_s + end_s) / 2.0, video_clip.duration - 0.05))
+        bucket.append(mid)
+
+    for speaker, panel in panels.items():
+        slot = {"x": panel["x"], "y": panel["y"], "w": panel["w"], "h": panel["h"]}
+        xs: List[int] = []
+        ys: List[int] = []
+        for t in speaker_times.get(speaker, []):
+            try:
+                frame = video_clip.get_frame(t)
+                fh_frame, _ = frame.shape[:2]
+                faces = _filter_watermark_faces(_detect_faces_in_frame(frame), fh_frame)
+                best = _best_face_in_slot(faces, slot["x"], slot["w"])
+                if best:
+                    fx, fy, fw_box, fh_box = best
+                    xs.append(int(fx + fw_box / 2))
+                    ys.append(int(fy + fh_box / 2))
             except Exception as exc:
                 logger.debug("Panel sample failed for %s at %.2fs: %s", speaker, t, exc)
 
-    panels: Dict[str, Dict[str, int]] = {}
-    missing: List[str] = []
-    for speaker, samples in panel_samples.items():
-        panel = _median_panel(samples)
-        if panel:
-            panels[speaker] = panel
+        if xs:
+            panel["face_cx"] = int(np.median(xs))
+            panel["face_cy"] = int(np.median(ys))
         else:
-            missing.append(speaker)
+            panel["face_cx"] = _slot_inner_face_cx(panel)
+            panel["face_cy"] = int(fh * 0.38)
 
-    if missing:
-        fallback = _slot_panels(len(speaker_times), fw, fh)
-        ordered = sorted(speaker_times.keys())
-        for idx, speaker in enumerate(ordered):
-            if speaker not in panels and idx < len(fallback):
-                panels[speaker] = fallback[idx]
-                logger.info(
-                    "Speaker %s using slot fallback panel x=%s w=%s",
-                    speaker,
-                    panels[speaker]["x"],
-                    panels[speaker]["w"],
-                )
-
-    for speaker, panel in panels.items():
         logger.info(
-            "Speaker panel %s → x=%s y=%s w=%s h=%s",
+            "Speaker panel %s → slot x=%s w=%s face=(%s,%s)",
             speaker,
             panel["x"],
-            panel["y"],
             panel["w"],
-            panel["h"],
+            panel.get("face_cx"),
+            panel.get("face_cy"),
         )
+
     return panels
 
 
@@ -398,25 +497,263 @@ def get_or_calibrate_panels(video_clip, transcript_data: Dict, video_path: Path)
     return panels
 
 
+def is_portrait_source(src_w: int, src_h: int) -> bool:
+    """True when source is already portrait (9:16 or taller)."""
+    if src_h <= 0:
+        return False
+    return (src_w / src_h) <= (9 / 16) + 0.02
+
+
+def default_riverside_panels(src_w: int, src_h: int) -> Dict[str, Dict[str, int]]:
+    """Fallback equal columns for Riverside 1280×720-style dual-feed layouts."""
+    half_w = src_w // 2
+    left = {
+        "x": 0,
+        "y": 0,
+        "w": half_w,
+        "h": src_h,
+        "face_cx": int(half_w * SLOT_INNER_EDGE_FRAC),
+        "face_cy": int(src_h * 0.38),
+    }
+    right = {
+        "x": half_w,
+        "y": 0,
+        "w": half_w,
+        "h": src_h,
+        "face_cx": half_w + int(half_w * SLOT_INNER_EDGE_FRAC),
+        "face_cy": int(src_h * 0.38),
+    }
+    return {"A": left, "B": right}
+
+
+def resolve_speaker_panel(
+    speaker: Optional[str],
+    panels: Dict[str, Dict[str, int]],
+    seating_map: Optional[Dict[str, int]] = None,
+    src_w: int = 1280,
+    src_h: int = 720,
+) -> Optional[Dict[str, int]]:
+    """Resolve the panel for ``speaker``, using spatial seating as fallback."""
+    if speaker and speaker in panels:
+        return panels[speaker]
+    if speaker and seating_map and speaker in seating_map:
+        bound = bind_speakers_to_columns({speaker: seating_map[speaker]}, src_w, src_h)
+        if speaker in bound:
+            return bound[speaker]
+    if panels:
+        if speaker and seating_map:
+            target_x = seating_map.get(speaker)
+            if target_x is not None:
+                return min(
+                    panels.values(),
+                    key=lambda p: abs(p.get("face_cx", p["x"]) - target_x),
+                )
+        return next(iter(panels.values()))
+    return None
+
+
+def face_center_in_slot(
+    video_clip,
+    t_s: float,
+    panel: Dict[str, int],
+) -> Optional[Tuple[int, int]]:
+    """Detect face center inside a speaker column at ``t_s``."""
+    try:
+        frame = video_clip.get_frame(t_s)
+    except Exception:
+        return None
+    fh, _ = frame.shape[:2]
+    faces = _filter_watermark_faces(_detect_faces_in_frame(frame), fh)
+    best = _best_face_in_slot(faces, panel["x"], panel["w"])
+    if not best:
+        return None
+    fx, fy, fw_box, fh_box = best
+    return int(fx + fw_box / 2), int(fy + fh_box / 2)
+
+
+def is_riverside_dual_feed(
+    src_w: int,
+    src_h: int,
+    panels: Dict[str, Dict[str, int]],
+) -> bool:
+    """
+    True for Riverside downloads: landscape container with two portrait camera columns.
+
+    Example: 1280×720 with two 640×720 feeds side-by-side.
+    """
+    if src_h <= 0 or src_w <= src_h:
+        return False
+    if len(panels) == 2:
+        half_w = src_w / 2
+        for panel in panels.values():
+            pw, ph = panel.get("w", 0), panel.get("h", 0)
+            if ph <= 0 or pw / ph < 0.85:
+                return False
+            if abs(pw - half_w) > src_w * 0.08:
+                return False
+        return True
+    if len(panels) == 1:
+        return False
+    # Dimension heuristic when panels are not yet calibrated
+    half_w = src_w / 2
+    return half_w / src_h >= 0.85
+
+
+def riverside_slot_crop(
+    panel: Dict[str, int],
+    src_w: int,
+    src_h: int,
+    *,
+    face_cx: Optional[int] = None,
+    face_cy: Optional[int] = None,
+    use_full_column: bool = False,
+) -> Tuple[int, int, int, int]:
+    """
+    Crop a Riverside camera column to 9:16 using full slot height (no extra zoom).
+
+    Centers horizontally on the calibrated or detected face; optionally uses the
+    entire column when face detection fails.
+    """
+    px, py, pw, ph = panel["x"], panel["y"], panel["w"], panel["h"]
+    if use_full_column:
+        x1 = max(0, min(px, src_w - pw))
+        y1 = max(0, min(py, src_h - ph))
+        return x1, y1, x1 + pw, y1 + ph
+
+    cx = face_cx if face_cx is not None else panel.get("face_cx", _slot_inner_face_cx(panel))
+    crop_h = round_to_even(ph)
+    crop_w = round_to_even(int(crop_h * 9 / 16))
+    if crop_w > pw:
+        crop_w = round_to_even(pw)
+        crop_h = round_to_even(int(crop_w * 16 / 9))
+    x1 = cx - crop_w // 2
+    x1 = max(px, min(x1, px + pw - crop_w))
+    y1 = max(py, min(py, py + ph - crop_h))
+    x1 = max(0, min(x1, src_w - crop_w))
+    y1 = max(0, min(y1, src_h - crop_h))
+    return x1, y1, x1 + crop_w, y1 + crop_h
+
+
+def riverside_dual_half_crop(
+    panel: Dict[str, int],
+    src_w: int,
+    src_h: int,
+    target_w: int,
+    target_h: int,
+    *,
+    face_cx: Optional[int] = None,
+    face_cy: Optional[int] = None,
+) -> Tuple[int, int, int, int]:
+    """
+    Crop a Riverside column for a stacked dual half (e.g. 1080×960).
+
+    Uses the widest cover-fit rect matching ``target_w/target_h`` inside the
+    column so uniform resize does not stretch faces horizontally.
+    """
+    px, py, pw, ph = panel["x"], panel["y"], panel["w"], panel["h"]
+    cx = face_cx if face_cx is not None else panel.get("face_cx", _slot_inner_face_cx(panel))
+    cy = face_cy if face_cy is not None else panel.get("face_cy", int(ph * 0.38))
+
+    target_aspect = target_w / max(target_h, 1)
+    slot_aspect = pw / max(ph, 1)
+
+    if slot_aspect >= target_aspect:
+        crop_h = round_to_even(ph)
+        crop_w = round_to_even(int(crop_h * target_aspect))
+    else:
+        crop_w = round_to_even(pw)
+        crop_h = round_to_even(int(crop_w / target_aspect))
+
+    if crop_w > pw:
+        crop_w = round_to_even(pw)
+        crop_h = round_to_even(int(crop_w / target_aspect))
+    if crop_h > ph:
+        crop_h = round_to_even(ph)
+        crop_w = round_to_even(int(crop_h * target_aspect))
+
+    x1 = cx - crop_w // 2
+    x1 = max(px, min(x1, px + pw - crop_w))
+    y1 = cy - int(crop_h * 0.38)
+    y1 = max(py, min(y1, py + ph - crop_h))
+    x1 = max(0, min(x1, src_w - crop_w))
+    y1 = max(0, min(y1, src_h - crop_h))
+    return x1, y1, x1 + crop_w, y1 + crop_h
+
+
+def face_in_panel(
+    faces: List[Tuple[int, int, int, int]],
+    panel: Dict[str, int],
+    *,
+    frame_h: Optional[int] = None,
+) -> bool:
+    """Return True when a face is detected inside a speaker column."""
+    filtered = faces
+    if frame_h is not None:
+        filtered = _filter_watermark_faces(faces, frame_h)
+    return _best_face_in_slot(filtered, panel["x"], panel["w"]) is not None
+
+
+def fit_portrait_crop(
+    panel: Dict[str, int],
+    src_w: int,
+    src_h: int,
+    *,
+    face_cx: Optional[int] = None,
+    face_cy: Optional[int] = None,
+) -> Tuple[int, int, int, int]:
+    """
+    Crop a speaker slot to 9:16 with apr23-style head+shoulders framing.
+
+    Uses nearly full frame height, centers on face with headroom, caps max zoom.
+    """
+    px, py, pw, ph = panel["x"], panel["y"], panel["w"], panel["h"]
+    cx = face_cx if face_cx is not None else panel.get("face_cx", px + pw // 2)
+    cy = face_cy if face_cy is not None else panel.get("face_cy", int(src_h * 0.38))
+
+    if is_portrait_source(src_w, src_h):
+        crop_w = round_to_even(src_w)
+        crop_h = round_to_even(int(crop_w * 16 / 9))
+        if crop_h > src_h:
+            crop_h = round_to_even(src_h)
+            crop_w = round_to_even(int(crop_h * 9 / 16))
+        x1 = max(0, min(round_to_even(cx - crop_w // 2), src_w - crop_w))
+        y1 = max(0, min(round_to_even(cy - int(crop_h * 0.38)), src_h - crop_h))
+        return x1, y1, x1 + crop_w, y1 + crop_h
+
+    crop_h = round_to_even(min(src_h, int(src_h * 0.92)))
+    crop_w = round_to_even(int(crop_h * 9 / 16))
+
+    min_crop_w = round_to_even(int(pw * 0.55))
+    if crop_w < min_crop_w:
+        crop_w = min(min_crop_w, pw, src_w)
+        crop_w = round_to_even(crop_w)
+        crop_h = round_to_even(int(crop_w * 16 / 9))
+        if crop_h > src_h:
+            crop_h = round_to_even(src_h)
+            crop_w = round_to_even(int(crop_h * 9 / 16))
+
+    if crop_w > pw:
+        crop_w = round_to_even(min(pw, src_w))
+        crop_h = round_to_even(int(crop_w * 16 / 9))
+
+    x1 = cx - crop_w // 2
+    x1 = max(px, min(x1, px + pw - crop_w))
+    x1 = max(0, min(x1, src_w - crop_w))
+
+    y1 = cy - int(crop_h * 0.38)
+    y1 = max(py, min(y1, py + ph - crop_h))
+    y1 = max(0, min(y1, src_h - crop_h))
+
+    return x1, y1, x1 + crop_w, y1 + crop_h
+
+
 def panel_to_vertical_crop(
     panel: Dict[str, int],
     src_w: int,
     src_h: int,
 ) -> Tuple[int, int, int, int]:
-    """Crop a speaker panel region to 9:16, centered within the panel."""
-    px, py, pw, ph = panel["x"], panel["y"], panel["w"], panel["h"]
-    crop_h = ph
-    crop_w = round_to_even(int(crop_h * 9 / 16))
-    if crop_w > pw:
-        crop_w = round_to_even(pw)
-        crop_h = round_to_even(int(crop_w * 16 / 9))
-    cx = px + pw // 2
-    cy = py + ph // 2
-    x1 = max(px, min(cx - crop_w // 2, px + pw - crop_w))
-    y1 = max(py, min(cy - crop_h // 2, py + ph - crop_h))
-    x1 = max(0, min(x1, src_w - crop_w))
-    y1 = max(0, min(y1, src_h - crop_h))
-    return x1, y1, x1 + crop_w, y1 + crop_h
+    """Crop a speaker panel region to 9:16."""
+    return fit_portrait_crop(panel, src_w, src_h)
 
 
 def round_to_even(value: int) -> int:

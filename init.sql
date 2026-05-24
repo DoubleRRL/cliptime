@@ -21,6 +21,8 @@ CREATE TABLE users (
     default_font_size INTEGER DEFAULT 24,
     default_font_color VARCHAR(7) DEFAULT '#FFFFFF',
     default_caption_template VARCHAR(50) DEFAULT 'default',
+    default_highlight_color VARCHAR(9) DEFAULT '#8B5CF6',
+    default_pill_color VARCHAR(9) DEFAULT '#1A1A1ACC',
     notify_on_completion BOOLEAN NOT NULL DEFAULT true,
     -- Monetization and billing fields
     is_admin BOOLEAN NOT NULL DEFAULT false,

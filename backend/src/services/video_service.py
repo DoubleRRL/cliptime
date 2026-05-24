@@ -257,6 +257,8 @@ class VideoService:
         caption_template: str = "default",
         output_format: str = "vertical",
         add_subtitles: bool = True,
+        highlight_color: str = "#8B5CF6",
+        background_color: str = "#1A1A1ACC",
     ) -> Optional[Dict[str, Any]]:
         """Render a single clip in the thread pool and return clip_info dict, or None on failure."""
         try:
@@ -289,6 +291,8 @@ class VideoService:
                 font_color,
                 caption_template,
                 output_format,
+                highlight_color=highlight_color,
+                background_color=background_color,
             )
 
             if not success:

@@ -15,11 +15,16 @@ class SubtitleCompositorTests(unittest.TestCase):
         self.assertGreater(peak, 1.0)
         self.assertAlmostEqual(settled, 1.0, places=2)
 
-    def test_opusclip_template_is_premium(self):
-        template = get_template("opusclip")
+    def test_riverside_template_is_premium(self):
+        template = get_template("riverside")
         self.assertTrue(is_premium_template(template))
-        scale = active_word_scale(template, elapsed=0.05, word_duration=0.4)
+        self.assertTrue(template.get("pill_style"))
+        scale = active_word_scale(template, elapsed=0.03, word_duration=0.4)
         self.assertGreater(scale, 1.0)
+
+    def test_opusclip_alias_maps_to_riverside(self):
+        template = get_template("opusclip")
+        self.assertEqual(template.get("name"), "Riverside")
 
 
 if __name__ == "__main__":

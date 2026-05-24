@@ -5,6 +5,7 @@ Optimized for MoviePy v2, AssemblyAI integration, and high-quality output.
 
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
+from dataclasses import dataclass
 import os
 import logging
 import numpy as np
@@ -717,6 +718,9 @@ def create_assemblyai_subtitles(
     font_size: int = 24,
     font_color: str = "#FFFFFF",
     caption_template: str = "default",
+    highlight_color: Optional[str] = None,
+    background_color: Optional[str] = None,
+    layout_timeline: Optional[List] = None,
 ) -> List[TextClip]:
     """Create subtitles using AssemblyAI's precise word timing with template support."""
     transcript_data = load_cached_transcript_data(video_path)
@@ -738,6 +742,10 @@ def create_assemblyai_subtitles(
         "font_color": effective_font_color,
         "font_family": effective_font_family,
     }
+    if highlight_color:
+        effective_template["highlight_color"] = highlight_color
+    if background_color:
+        effective_template["background_color"] = background_color
 
     logger.info(
         f"Creating subtitles with template '{caption_template}', animation: {animation_type}"
@@ -758,6 +766,7 @@ def create_assemblyai_subtitles(
             video_height,
             effective_template,
             effective_font_family,
+            layout_timeline=layout_timeline,
         )
     elif animation_type == "pop":
         return create_pop_subtitles(
@@ -1008,7 +1017,71 @@ def build_speaker_turns(
     return [t for t in merged if t["end_ms"] > t["start_ms"]]
 
 
-def create_speaker_cut_clip(
+@dataclass
+class DirectedLayoutContext:
+    timeline: List
+    panels: Dict[str, Dict[str, int]]
+    riverside_feed: bool
+    seating_map: Dict[str, int]
+    clip_start_ms: int
+
+
+def prepare_directed_layout(
+    full_video: VideoFileClip,
+    transcript_data: Dict,
+    clip_start_s: float,
+    clip_end_s: float,
+    video_path: Optional[Path] = None,
+) -> DirectedLayoutContext:
+    """Build panels, seating, and layout timeline for a clip segment."""
+    from .layout_director import (
+        build_layout_timeline,
+        build_portrait_layout_timeline,
+    )
+    from .speaker_panels import (
+        default_riverside_panels,
+        is_portrait_source,
+        is_riverside_dual_feed,
+    )
+
+    src_w, src_h = full_video.size
+    panels: Dict[str, Dict[str, int]] = {}
+    if video_path is not None:
+        panels = get_or_calibrate_panels(full_video, transcript_data, video_path)
+
+    clip_start_ms = int(clip_start_s * 1000)
+    clip_end_ms = int(clip_end_s * 1000)
+    seating_map = build_speaker_seating_map(full_video, transcript_data)
+
+    if is_portrait_source(src_w, src_h):
+        timeline = build_portrait_layout_timeline(
+            full_video, clip_start_s, clip_end_s
+        )
+        riverside_feed = False
+    else:
+        riverside_feed = is_riverside_dual_feed(src_w, src_h, panels)
+        if riverside_feed and len(panels) < 2:
+            panels = default_riverside_panels(src_w, src_h)
+        timeline = build_layout_timeline(
+            transcript_data,
+            clip_start_ms,
+            clip_end_ms,
+            src_w=src_w,
+            src_h=src_h,
+            full_video=full_video,
+            panels=panels,
+        )
+
+    return DirectedLayoutContext(
+        timeline=timeline,
+        panels=panels,
+        riverside_feed=riverside_feed,
+        seating_map=seating_map,
+        clip_start_ms=clip_start_ms,
+    )
+
+
+def create_directed_clip(
     full_video: VideoFileClip,
     clip: VideoFileClip,
     transcript_data: Dict,
@@ -1017,93 +1090,124 @@ def create_speaker_cut_clip(
     target_w: int,
     target_h: int,
     video_path: Optional[Path] = None,
+    layout_ctx: Optional[DirectedLayoutContext] = None,
 ) -> VideoFileClip:
     """
-    Return a 9:16 cropped clip with OpusClip-style dynamic speaker cuts.
+    Return a 9:16 clip with Riverside-style directed layouts.
 
-    Uses fixed per-speaker panel regions (calibrated once per source video),
-    then switches the 9:16 crop to the active speaker's panel on each turn.
+    Landscape sources: solo speaker crops plus dual stacked segments during
+    reaction/overlap moments. Portrait sources: full-frame pass-through.
     """
     from moviepy import concatenate_videoclips  # local import to avoid circular
+
+    from .layout_director import (
+        render_dual_stack_segment,
+        render_pass_through_segment,
+        render_riverside_dual_stack_segment,
+        render_riverside_solo_segment,
+        render_solo_segment,
+    )
 
     CROSSFADE = 0.1  # seconds
 
     try:
+        ctx = layout_ctx or prepare_directed_layout(
+            full_video,
+            transcript_data,
+            clip_start_s,
+            clip_end_s,
+            video_path=video_path,
+        )
         src_w, src_h = full_video.size
-        panels: Dict[str, Dict[str, int]] = {}
-        if video_path is not None:
-            panels = get_or_calibrate_panels(full_video, transcript_data, video_path)
-
-        clip_start_ms = int(clip_start_s * 1000)
-        clip_end_ms = int(clip_end_s * 1000)
-        turns = build_speaker_turns(transcript_data, clip_start_ms, clip_end_ms)
-
-        if not turns:
-            turns = [
-                {
-                    "speaker": None,
-                    "start_ms": clip_start_ms,
-                    "end_ms": clip_end_ms,
-                }
-            ]
-
-        def _crop_for_speaker(speaker: Optional[str], t_start: float, t_end: float) -> Optional[VideoFileClip]:
-            if t_end - t_start <= 0:
-                return None
-            if panels and speaker and speaker in panels:
-                x1, y1, x2, y2 = panel_to_vertical_crop(panels[speaker], src_w, src_h)
-            elif panels and len(panels) == 1:
-                only_panel = next(iter(panels.values()))
-                x1, y1, x2, y2 = panel_to_vertical_crop(only_panel, src_w, src_h)
-            else:
-                seating_map = build_speaker_seating_map(full_video, transcript_data)
-                crop_h = round_to_even(src_h)
-                crop_w = round_to_even(int(src_h * (9 / 16)))
-                if crop_w > src_w:
-                    crop_w = round_to_even(src_w)
-                if speaker and speaker in seating_map:
-                    raw_x = seating_map[speaker] - crop_w // 2
-                    x1 = round_to_even(max(0, min(raw_x, src_w - crop_w)))
-                else:
-                    x1 = round_to_even(max(0, (src_w - crop_w) // 2))
-                y1, x2, y2 = 0, x1 + crop_w, crop_h
-
-            seg = full_video.subclipped(t_start, t_end).cropped(
-                x1=x1, y1=y1, x2=x2, y2=y2
-            )
-            if (seg.size[0], seg.size[1]) != (target_w, target_h):
-                seg = seg.resized((target_w, target_h))
-            return seg
+        timeline = ctx.timeline
+        panels = ctx.panels
+        riverside_feed = ctx.riverside_feed
+        seating_map = ctx.seating_map
 
         segments: List[VideoFileClip] = []
-        for turn in turns:
-            seg = _crop_for_speaker(
-                turn.get("speaker"),
-                turn["start_ms"] / 1000.0,
-                turn["end_ms"] / 1000.0,
-            )
-            if seg is not None:
-                segments.append(seg)
+        for seg in timeline:
+            t_start = seg.start_ms / 1000.0
+            t_end = seg.end_ms / 1000.0
+            rendered: Optional[VideoFileClip] = None
+
+            if seg.mode == "pass_through":
+                rendered = render_pass_through_segment(
+                    full_video, t_start, t_end, target_w, target_h
+                )
+            elif seg.mode == "dual" and len(panels) >= 2:
+                if riverside_feed:
+                    rendered = render_riverside_dual_stack_segment(
+                        full_video,
+                        t_start,
+                        t_end,
+                        panels,
+                        src_w,
+                        src_h,
+                        target_w,
+                        target_h,
+                        seating_map=seating_map,
+                    )
+                else:
+                    rendered = render_dual_stack_segment(
+                        full_video,
+                        t_start,
+                        t_end,
+                        panels,
+                        src_w,
+                        src_h,
+                        target_w,
+                        target_h,
+                    )
+            elif riverside_feed:
+                rendered = render_riverside_solo_segment(
+                    full_video,
+                    t_start,
+                    t_end,
+                    seg.speaker,
+                    panels,
+                    src_w,
+                    src_h,
+                    target_w,
+                    target_h,
+                    seating_map=seating_map,
+                )
+            else:
+                rendered = render_solo_segment(
+                    full_video,
+                    t_start,
+                    t_end,
+                    seg.speaker,
+                    panels,
+                    src_w,
+                    src_h,
+                    target_w,
+                    target_h,
+                    seating_map=seating_map,
+                )
+
+            if rendered is not None:
+                segments.append(rendered)
 
         if segments:
             if len(segments) == 1:
-                logger.info("Speaker panel crop applied (single turn)")
+                logger.info("Directed layout applied (single segment)")
                 return segments[0]
             faded: List[VideoFileClip] = [segments[0]]
-            for seg in segments[1:]:
-                if seg.duration > CROSSFADE * 2:
-                    seg = seg.with_effects([CrossFadeIn(CROSSFADE)])
-                faded.append(seg)
+            for seg_clip in segments[1:]:
+                if seg_clip.duration > CROSSFADE * 2:
+                    seg_clip = seg_clip.with_effects([CrossFadeIn(CROSSFADE)])
+                faded.append(seg_clip)
             result = concatenate_videoclips(faded, method="compose")
             logger.info(
-                f"Speaker panel cuts applied: {len(segments)} segments "
-                f"from {len(turns)} turns ({len(panels)} panels)"
+                "Directed layout applied: %s segments (riverside_feed=%s)",
+                len(segments),
+                riverside_feed,
             )
             return result
 
     except Exception as exc:
         logger.warning(
-            f"Speaker panel cuts failed, falling back to face-centred crop: {exc}"
+            f"Directed layout failed, falling back to face-centred crop: {exc}"
         )
 
     # --- Fallback: static face-centred crop ---
@@ -1117,6 +1221,29 @@ def create_speaker_cut_clip(
     if (fallback.size[0], fallback.size[1]) != (target_w, target_h):
         fallback = fallback.resized((target_w, target_h))
     return fallback
+
+
+def create_speaker_cut_clip(
+    full_video: VideoFileClip,
+    clip: VideoFileClip,
+    transcript_data: Dict,
+    clip_start_s: float,
+    clip_end_s: float,
+    target_w: int,
+    target_h: int,
+    video_path: Optional[Path] = None,
+) -> VideoFileClip:
+    """Backward-compatible alias for :func:`create_directed_clip`."""
+    return create_directed_clip(
+        full_video,
+        clip,
+        transcript_data,
+        clip_start_s,
+        clip_end_s,
+        target_w,
+        target_h,
+        video_path=video_path,
+    )
 
 
 EMOJI_KEYWORDS = {
@@ -1166,15 +1293,18 @@ def create_karaoke_subtitles(
     video_height: int,
     template: Dict,
     font_family: str,
+    layout_timeline: Optional[List] = None,
 ) -> List[TextClip]:
     """Create karaoke-style subtitles with word-by-word highlighting."""
+    from .layout_director import caption_position_y_at_time
+
     subtitle_clips = []
     processor = VideoProcessor(
         font_family, template["font_size"], template["font_color"]
     )
 
     calculated_font_size = get_scaled_font_size(template["font_size"], video_width)
-    position_y = template.get("position_y", 0.75)
+    default_position_y = template.get("position_y", 0.75)
     highlight_color = template.get("highlight_color", "#FFD700")
     normal_color = template["font_color"]
     max_text_width = get_subtitle_max_width(video_width)
@@ -1193,7 +1323,8 @@ def create_karaoke_subtitles(
                 video_height,
                 template,
                 processor.font_path,
-                position_y=template.get("position_y", 0.65),
+                position_y=template.get("position_y", 0.82),
+                layout_timeline=layout_timeline,
             )
             if premium_clips:
                 logger.info(f"Created {len(premium_clips)} premium PIL subtitle clips")
@@ -1230,19 +1361,23 @@ def create_karaoke_subtitles(
         for word_idx, current_word in enumerate(word_group):
             word_start = current_word["start"]
             word_end = current_word["end"]
-            word_duration = word_end - word_start
+            if word_idx + 1 < len(word_group):
+                word_duration = float(word_group[word_idx + 1]["start"]) - word_start
+            else:
+                word_duration = word_end - word_start
+            word_duration = max(0.05, word_duration)
 
             if word_duration < 0.05:
                 continue
 
+            visible_group = word_group[: word_idx + 1]
+
             try:
-                # Build the text with the current word highlighted
-                # We create individual text clips for each word and composite them
                 word_clips_for_composite = []
                 font_size_for_group = calculated_font_size
-                word_widths = measure_word_group_width(word_group, font_size_for_group)
+                word_widths = measure_word_group_width(visible_group, font_size_for_group)
                 space_width = font_size_for_group * 0.28
-                total_width = sum(word_widths) + space_width * (len(word_group) - 1)
+                total_width = sum(word_widths) + space_width * (len(visible_group) - 1)
 
                 if total_width > max_text_width and total_width > 0:
                     shrink_ratio = max_text_width / total_width
@@ -1250,10 +1385,10 @@ def create_karaoke_subtitles(
                         20, int(font_size_for_group * shrink_ratio)
                     )
                     word_widths = measure_word_group_width(
-                        word_group, font_size_for_group
+                        visible_group, font_size_for_group
                     )
                     space_width = font_size_for_group * 0.28
-                    total_width = sum(word_widths) + space_width * (len(word_group) - 1)
+                    total_width = sum(word_widths) + space_width * (len(visible_group) - 1)
 
                 # Second pass: create positioned clips
                 current_x = max(horizontal_padding, (video_width - total_width) / 2)
@@ -1261,7 +1396,7 @@ def create_karaoke_subtitles(
 
                 # Pre-calculate vertical position based on max word height in group
                 max_w_height = 40
-                for w in word_group:
+                for w in visible_group:
                     t_text = w["text"].upper() if is_opus else w["text"]
                     temp_c = TextClip(
                         text=t_text,
@@ -1272,11 +1407,16 @@ def create_karaoke_subtitles(
                     max_w_height = max(max_w_height, temp_c.size[1] if temp_c.size else 40)
                     temp_c.close()
 
+                position_y = (
+                    caption_position_y_at_time(word_start, layout_timeline)
+                    if layout_timeline
+                    else default_position_y
+                )
                 vertical_position = get_safe_vertical_position(
                     video_height, max_w_height, position_y
                 )
 
-                for w_idx, word in enumerate(word_group):
+                for w_idx, word in enumerate(visible_group):
                     is_current = w_idx == word_idx
                     
                     # Opus Style Highlights (Yellow active, Green for active key terms with emojis)
@@ -1623,6 +1763,8 @@ def create_optimized_clip(
     font_color: str = "#FFFFFF",
     caption_template: str = "default",
     output_format: str = "vertical",
+    highlight_color: Optional[str] = None,
+    background_color: Optional[str] = None,
 ) -> bool:
     """Create clip with optional subtitles. output_format: 'vertical' (9:16) or 'original' (keep source size)."""
     try:
@@ -1673,6 +1815,7 @@ def create_optimized_clip(
 
         end_time = min(end_time, video.duration)
         clip = video.subclipped(start_time, end_time)
+        relative_layout_timeline = None
 
         if keep_original:
             # No face detection, no crop, no resize - use trimmed clip as-is
@@ -1693,6 +1836,7 @@ def create_optimized_clip(
                 _crop_w = round_to_even(src_w)
                 _crop_h = round_to_even(int(src_w / (9 / 16)))
             target_width, target_height = _crop_w, _crop_h
+            output_target_w, output_target_h = 1080, 1920
 
             transcript_data = load_cached_transcript_data(video_path)
             has_speakers = bool(
@@ -1700,9 +1844,23 @@ def create_optimized_clip(
                 and transcript_data.get("utterances")
             )
 
+            layout_ctx = None
             if has_speakers:
-                # Try OpusClip-style dynamic speaker cuts
-                processed_clip = create_speaker_cut_clip(
+                layout_ctx = prepare_directed_layout(
+                    video,
+                    transcript_data,
+                    start_time,
+                    end_time,
+                    video_path=video_path,
+                )
+                from .layout_director import timeline_to_clip_relative
+
+                relative_layout_timeline = timeline_to_clip_relative(
+                    layout_ctx.timeline, layout_ctx.clip_start_ms
+                )
+
+            if has_speakers:
+                processed_clip = create_directed_clip(
                     video,
                     clip,
                     transcript_data,
@@ -1711,6 +1869,7 @@ def create_optimized_clip(
                     target_width,
                     target_height,
                     video_path=video_path,
+                    layout_ctx=layout_ctx,
                 )
             else:
                 # Single-speaker or no diarisation: static face-centred crop
@@ -1724,15 +1883,22 @@ def create_optimized_clip(
                 if (processed_clip.size[0], processed_clip.size[1]) != (target_width, target_height):
                     processed_clip = processed_clip.resized((target_width, target_height))
 
+            if (processed_clip.size[0], processed_clip.size[1]) != (output_target_w, output_target_h):
+                processed_clip = processed_clip.resized((output_target_w, output_target_h))
+                target_width, target_height = output_target_w, output_target_h
+
             cropped_clip = processed_clip
-
-
-        # Add AssemblyAI subtitles with template support
         final_clips = [processed_clip]
         template = get_template(caption_template)
+        from .subtitle_compositor import is_premium_template
+
+        use_pil_premium = add_subtitles and (
+            template.get("pill_style") or is_premium_template(template)
+        )
         use_ass_karaoke = (
             add_subtitles
             and template.get("animation") == "karaoke"
+            and not use_pil_premium
         )
         ass_available = False
         if use_ass_karaoke:
@@ -1742,7 +1908,7 @@ def create_optimized_clip(
             if not ass_available:
                 logger.warning("ASS/libass unavailable — falling back to MoviePy karaoke")
 
-        if add_subtitles and not (use_ass_karaoke and ass_available):
+        if add_subtitles and (use_pil_premium or not (use_ass_karaoke and ass_available)):
             subtitle_clips = create_assemblyai_subtitles(
                 video_path,
                 start_time,
@@ -1753,6 +1919,9 @@ def create_optimized_clip(
                 font_size,
                 font_color,
                 caption_template,
+                highlight_color=highlight_color,
+                background_color=background_color,
+                layout_timeline=relative_layout_timeline,
             )
             final_clips.extend(subtitle_clips)
 

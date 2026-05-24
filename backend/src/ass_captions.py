@@ -156,20 +156,20 @@ def generate_ass_from_words(
     for gi, group in enumerate(groups):
         line_start = float(group[0]["start"])
         if gi + 1 < len(groups):
-            line_end = max(line_start + 0.5, float(groups[gi + 1][0]["start"]))
+            line_end = max(float(group[-1]["end"]) + 0.05, line_start + 0.1)
         else:
-            line_end = max(line_start + 0.5, float(group[-1]["end"]))
+            line_end = max(line_start + 0.1, float(group[-1]["end"]) + 0.05)
 
         karaoke_parts: List[str] = []
         for j, word_entry in enumerate(group):
             word = str(word_entry["text"])
             t = float(word_entry["start"])
             if j + 1 < len(group):
-                dur_cs = max(10, int((float(group[j + 1]["start"]) - t) * 100))
+                dur_cs = max(5, int((float(group[j + 1]["start"]) - t) * 100))
             else:
-                dur_cs = max(10, int((line_end - t) * 100))
+                dur_cs = max(5, int((float(group[j]["end"]) - t) * 100))
             display = word.upper() if uppercase else word
-            karaoke_parts.append(f"{{\\kf{dur_cs}}}{display}")
+            karaoke_parts.append(f"{{\\k{dur_cs}}}{display}")
 
         text = " ".join(karaoke_parts)
         lines.append(
