@@ -39,6 +39,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
+import { MotionFadeIn } from "@/components/motion-primitives";
 
 interface Task {
   id: string;
@@ -82,32 +83,32 @@ const STATUS_CONFIG: Record<
   completed: {
     label: "Completed",
     dotClass: "bg-emerald-500",
-    bgClass: "bg-emerald-50 border-emerald-200/60",
-    textClass: "text-emerald-800",
+    bgClass: "bg-emerald-500/15 border-emerald-500/30",
+    textClass: "text-emerald-300",
   },
   processing: {
     label: "Processing",
     dotClass: "bg-blue-500 animate-pulse",
-    bgClass: "bg-blue-50 border-blue-200/60",
-    textClass: "text-blue-800",
+    bgClass: "bg-blue-500/15 border-blue-500/30",
+    textClass: "text-blue-300",
   },
   queued: {
     label: "Queued",
     dotClass: "bg-amber-500",
-    bgClass: "bg-amber-50 border-amber-200/60",
-    textClass: "text-amber-800",
+    bgClass: "bg-amber-500/15 border-amber-500/30",
+    textClass: "text-amber-300",
   },
   error: {
     label: "Error",
     dotClass: "bg-red-500",
-    bgClass: "bg-red-50 border-red-200/60",
-    textClass: "text-red-800",
+    bgClass: "bg-red-500/15 border-red-500/30",
+    textClass: "text-red-300",
   },
   cancelled: {
     label: "Cancelled",
-    dotClass: "bg-stone-400",
-    bgClass: "bg-stone-100 border-stone-200/60",
-    textClass: "text-stone-600",
+    dotClass: "bg-muted-foreground",
+    bgClass: "bg-muted border-border",
+    textClass: "text-muted-foreground",
   },
 };
 
@@ -331,7 +332,7 @@ export default function ListPage() {
 
   if (isPending) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+      <div className="min-h-screen bg-card flex items-center justify-center p-4">
         <div className="space-y-4">
           <Skeleton className="h-4 w-32 mx-auto" />
           <Skeleton className="h-4 w-48 mx-auto" />
@@ -343,10 +344,10 @@ export default function ListPage() {
 
   if (!session?.user) {
     return (
-      <div className="min-h-screen bg-white">
+      <div className="min-h-screen bg-card">
         <div className="max-w-4xl mx-auto px-4 py-24 text-center">
-          <h1 className="text-3xl font-bold text-black mb-4">Sign In Required</h1>
-          <p className="text-gray-600 mb-8">
+          <h1 className="text-3xl font-bold text-foreground mb-4">Sign In Required</h1>
+          <p className="text-muted-foreground mb-8">
             You need to be signed in to view your generations.
           </p>
           <Link href="/sign-in">
@@ -385,13 +386,13 @@ export default function ListPage() {
   /* ── Main render ──────────────────────────────────────────── */
 
   return (
-    <div className="min-h-screen bg-stone-50/50">
+    <div className="min-h-screen bg-muted/40">
       {/* ── Page header ──────────────────────────────────────── */}
-      <div className="border-b border-stone-200 bg-white">
+      <div className="border-b border-border bg-card">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
           <div className="flex items-center gap-3 mb-4">
             <Link href="/">
-              <Button variant="ghost" size="sm" className="text-stone-500 hover:text-stone-900">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <ArrowLeft className="w-4 h-4" />
                 Back
               </Button>
@@ -400,10 +401,10 @@ export default function ListPage() {
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="font-[var(--font-syne)] text-2xl font-bold tracking-tight text-stone-950">
+              <h1 className="font-[var(--font-syne)] text-2xl font-bold tracking-tight text-foreground">
                 Generations
               </h1>
-              <p className="mt-1 text-sm text-stone-500">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {tasks.length} total &middot; manage and review your clips
               </p>
             </div>
@@ -411,19 +412,19 @@ export default function ListPage() {
             {!isLoading && !error && tasks.length > 0 && (
               <div className="flex items-center gap-2">
                 {completedCount > 0 && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200/60 px-2.5 py-1 text-xs font-medium text-emerald-800">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2.5 py-1 text-xs font-medium text-emerald-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                     {completedCount} done
                   </span>
                 )}
                 {activeCount > 0 && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 border border-blue-200/60 px-2.5 py-1 text-xs font-medium text-blue-800">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-500/15 border border-blue-500/30 px-2.5 py-1 text-xs font-medium text-blue-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
                     {activeCount} active
                   </span>
                 )}
                 {attentionCount > 0 && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-50 border border-red-200/60 px-2.5 py-1 text-xs font-medium text-red-700">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-red-500/15 border border-red-500/30 px-2.5 py-1 text-xs font-medium text-red-300">
                     <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
                     {attentionCount} need attention
                   </span>
@@ -442,14 +443,14 @@ export default function ListPage() {
             className={cn(
               "mb-4",
               batchNotice.tone === "success"
-                ? "border-emerald-200 bg-emerald-50/50"
-                : "border-red-200 bg-red-50/50",
+                ? "border-emerald-500/30 bg-emerald-500/10"
+                : "border-red-500/30 bg-red-500/10",
             )}
           >
             {batchNotice.tone === "success" ? (
-              <CheckCircle className="h-4 w-4 text-emerald-600" />
+              <CheckCircle className="h-4 w-4 text-emerald-400" />
             ) : (
-              <AlertCircle className="h-4 w-4 text-red-600" />
+              <AlertCircle className="h-4 w-4 text-red-400" />
             )}
             <AlertDescription className="text-sm">
               {batchNotice.message}
@@ -462,7 +463,7 @@ export default function ListPage() {
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={i}
-                className="flex items-center gap-4 rounded-xl border border-stone-200 bg-white p-4"
+                className="flex items-center gap-4 rounded-xl border border-border bg-card p-4"
               >
                 <Skeleton className="h-5 w-5 rounded" />
                 <div className="flex-1 space-y-2">
@@ -479,13 +480,13 @@ export default function ListPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         ) : tasks.length === 0 ? (
-          <Card className="border-stone-200">
+          <Card className="border-border">
             <CardContent className="p-12 text-center">
-              <div className="w-16 h-16 bg-stone-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <PlayCircle className="w-8 h-8 text-stone-400" />
+              <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <PlayCircle className="w-8 h-8 text-muted-foreground" />
               </div>
-              <h2 className="text-xl font-semibold text-stone-950 mb-2">No generations yet</h2>
-              <p className="text-stone-500 mb-6 text-sm">
+              <h2 className="text-xl font-semibold text-foreground mb-2">No generations yet</h2>
+              <p className="text-muted-foreground mb-6 text-sm">
                 Start by processing your first video to create clips.
               </p>
               <Link href="/">
@@ -502,33 +503,33 @@ export default function ListPage() {
                 onCheckedChange={handleToggleAllVisible}
                 disabled={activeBatchAction !== null}
                 aria-label="Select all generations"
-                className="data-[state=indeterminate]:bg-stone-400 data-[state=indeterminate]:border-stone-400"
+                className="data-[state=indeterminate]:bg-muted-foreground data-[state=indeterminate]:border-muted-foreground"
               />
-              <span className="text-xs font-medium uppercase tracking-widest text-stone-400">
+              <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
                 {selectedCount > 0 ? `${selectedCount} of ${tasks.length} selected` : "Select"}
               </span>
             </div>
 
             {/* ── Task list ───────────────────────────────────── */}
             <div className="space-y-2">
-              {tasks.map((task) => {
+              {tasks.map((task, index) => {
                 const isSelected = selectedTaskIds.includes(task.id);
 
                 return (
+                  <MotionFadeIn key={task.id} delay={index * 0.04}>
                   <div
-                    key={task.id}
                     className={cn(
-                      "group relative flex items-start gap-4 rounded-xl border bg-white p-4 transition-all duration-150",
+                      "group relative flex items-start gap-4 rounded-xl border bg-card p-4 transition-all duration-150",
                       isSelected
-                        ? "border-stone-900/20 bg-stone-50 shadow-sm ring-1 ring-stone-900/5"
-                        : "border-stone-200 hover:border-stone-300 hover:shadow-sm",
+                        ? "border-primary/20 bg-muted/40 shadow-sm ring-1 ring-primary/5"
+                        : "border-border hover:border-muted-foreground/30 hover:shadow-sm",
                     )}
                   >
                     {/* Selection indicator bar */}
                     <div
                       className={cn(
                         "absolute left-0 top-3 bottom-3 w-0.5 rounded-full transition-all duration-150",
-                        isSelected ? "bg-stone-900" : "bg-transparent",
+                        isSelected ? "bg-primary" : "bg-transparent",
                       )}
                     />
 
@@ -550,11 +551,11 @@ export default function ListPage() {
                     <Link href={`/tasks/${task.id}`} className="flex-1 min-w-0">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
-                          <h3 className="truncate text-sm font-semibold text-stone-950 transition-colors group-hover:text-stone-600">
+                          <h3 className="truncate text-sm font-semibold text-foreground transition-colors group-hover:text-muted-foreground">
                             {task.source_title}
                           </h3>
-                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-400">
-                            <span className="uppercase tracking-wide font-medium text-stone-500">
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span className="uppercase tracking-wide font-medium text-muted-foreground">
                               {task.source_type}
                             </span>
                             <Separator orientation="vertical" className="h-3" />
@@ -575,6 +576,7 @@ export default function ListPage() {
                       </div>
                     </Link>
                   </div>
+                  </MotionFadeIn>
                 );
               })}
             </div>

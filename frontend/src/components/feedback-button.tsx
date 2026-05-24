@@ -80,11 +80,11 @@ export function FeedbackButton() {
       <PopoverContent
         side="top"
         align="end"
-        className="w-80"
+        className="w-80 bg-popover text-popover-foreground border-border"
         sideOffset={12}
       >
         <div className="space-y-3">
-          <h3 className="font-semibold text-sm">Send Feedback</h3>
+          <h3 className="font-semibold text-sm text-foreground">Send Feedback</h3>
 
           <Select value={category} onValueChange={setCategory}>
             <SelectTrigger className="w-full">

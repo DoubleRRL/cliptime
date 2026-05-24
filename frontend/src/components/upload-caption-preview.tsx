@@ -137,7 +137,7 @@ export default function UploadCaptionPreview({
   return (
     <div className={compact ? "space-y-3" : "space-y-4"}>
       {!compact && (
-        <div className="flex items-center justify-center gap-2 text-sm text-stone-400">
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
           <span>Caption Preview</span>
         </div>
       )}
@@ -156,11 +156,11 @@ export default function UploadCaptionPreview({
 
       <div className="mx-auto" style={{ width: PREVIEW_WIDTH }}>
         <div
-          className="relative overflow-hidden rounded-2xl border border-stone-200 bg-stone-900 shadow-lg"
+          className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-lg"
           style={{ width: PREVIEW_WIDTH, height: PREVIEW_HEIGHT }}
         >
           {isLoading ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-stone-800 text-stone-300">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-muted text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin" />
               <span className="text-xs">Uploading & analyzing…</span>
             </div>
@@ -177,7 +177,7 @@ export default function UploadCaptionPreview({
               <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/60 to-transparent" />
             </>
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-stone-800 text-xs text-stone-400 px-4 text-center">
+            <div className="absolute inset-0 flex items-center justify-center bg-muted text-xs text-muted-foreground px-4 text-center">
               {error || "Select a video to preview captions"}
             </div>
           )}
@@ -240,8 +240,8 @@ export default function UploadCaptionPreview({
                 onClick={() => onPanelChange(index)}
                 className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                   index === selectedPanelIndex
-                    ? "bg-stone-900 text-white"
-                    : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-accent"
                 }`}
               >
                 {p.label}
@@ -251,14 +251,14 @@ export default function UploadCaptionPreview({
         )}
 
         {!isLoading && thumbnailUrl && (
-          <p className="mt-2 text-[11px] leading-snug text-stone-400">
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
             Layout detected from your video. Final clips may refine speaker assignment after
             transcription.
           </p>
         )}
 
         {error && thumbnailUrl && (
-          <p className="mt-1 text-[11px] text-amber-700">{error}</p>
+          <p className="mt-1 text-[11px] text-amber-400/90">{error}</p>
         )}
       </div>
     </div>

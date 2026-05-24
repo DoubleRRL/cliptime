@@ -25,6 +25,8 @@ import { extractVideoFrame } from "@/lib/extract-video-frame";
 import { previewDisplayFontSize } from "@/lib/caption-fit";
 import { type SpeakerPanel } from "@/lib/preview-crop";
 import { isLandingOnlyModeEnabled } from "@/lib/app-flags";
+import { MotionFadeIn } from "@/components/motion-primitives";
+import { motion, AnimatePresence } from "motion/react";
 
 const DEFAULT_PROCESSING_MODE =
   process.env.NEXT_PUBLIC_DEFAULT_PROCESSING_MODE || "quality";
@@ -683,7 +685,7 @@ export default function Home() {
       save_clips: <Loader2 className="w-4 h-4 animate-spin text-pink-500" />,
       complete: <CheckCircle className="w-4 h-4 text-green-500" />,
     };
-    return iconMap[step] || <Loader2 className="w-4 h-4 animate-spin text-gray-500" />;
+    return iconMap[step] || <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -813,7 +815,7 @@ export default function Home() {
 
   if (isPending) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-4">
         <div className="space-y-4">
           <Skeleton className="h-4 w-32 mx-auto" />
           <Skeleton className="h-4 w-48 mx-auto" />
@@ -828,9 +830,9 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <div className="border-b bg-white relative">
+      <div className="border-b bg-card relative">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -841,7 +843,7 @@ export default function Home() {
                 height={24}
                 className="rounded-lg"
               />
-              <h1 className="text-xl font-bold text-black">SupoClip</h1>
+              <h1 className="text-xl font-bold text-foreground">SupoClip</h1>
             </div>
 
             {/* Desktop nav */}
@@ -851,20 +853,20 @@ export default function Home() {
                   <Badge
                     className={`text-[10px] px-1.5 py-0 h-5 ${
                       billingSummary.plan === "pro"
-                        ? "bg-stone-900 text-white"
-                        : "bg-stone-100 text-stone-600 border border-stone-200"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted text-muted-foreground border border-border"
                     }`}
                   >
                     {billingSummary.plan === "pro" ? "Pro" : "Free"}
                   </Badge>
                   <div className="flex items-center gap-1.5">
-                    <div className="w-16 h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                    <div className="w-16 h-1.5 bg-secondary rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
                           billingSummary.usage_limit &&
                           billingSummary.usage_count / billingSummary.usage_limit > 0.8
                             ? "bg-red-500"
-                            : "bg-stone-900"
+                            : "bg-primary"
                         }`}
                         style={{
                           width: billingSummary.usage_limit
@@ -873,7 +875,7 @@ export default function Home() {
                         }}
                       />
                     </div>
-                    <span className="text-[11px] text-stone-500 tabular-nums whitespace-nowrap">
+                    <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
                       {billingSummary.usage_limit
                         ? `${billingSummary.usage_count}/${billingSummary.usage_limit}`
                         : `${billingSummary.usage_count}`}
@@ -896,16 +898,16 @@ export default function Home() {
               <Button variant="outline" size="sm" onClick={handleSignOut}>
                 Sign Out
               </Button>
-              <Link href="/settings" className="flex items-center gap-3 hover:bg-gray-50 rounded-lg px-3 py-2 transition-colors cursor-pointer">
+              <Link href="/settings" className="flex items-center gap-3 hover:bg-accent rounded-lg px-3 py-2 transition-colors cursor-pointer">
                 <Avatar className="w-8 h-8">
                   <AvatarImage src={session.user.image || ""} />
-                  <AvatarFallback className="bg-gray-100 text-black text-sm">
+                  <AvatarFallback className="bg-muted text-foreground text-sm">
                     {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
                   </AvatarFallback>
                 </Avatar>
                 <div className="hidden sm:block">
-                  <p className="text-sm font-medium text-black">{session.user.name}</p>
-                  <p className="text-xs text-gray-500">{session.user.email}</p>
+                  <p className="text-sm font-medium text-foreground">{session.user.name}</p>
+                  <p className="text-xs text-muted-foreground">{session.user.email}</p>
                 </div>
               </Link>
             </div>
@@ -916,8 +918,8 @@ export default function Home() {
                 <Badge
                   className={`text-[10px] px-1.5 py-0 h-5 ${
                     billingSummary.plan === "pro"
-                      ? "bg-stone-900 text-white"
-                      : "bg-stone-100 text-stone-600 border border-stone-200"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground border border-border"
                   }`}
                 >
                   {billingSummary.plan === "pro" ? "Pro" : "Free"}
@@ -937,24 +939,31 @@ export default function Home() {
         </div>
 
         {/* Mobile menu dropdown */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t bg-white absolute left-0 right-0 z-50 shadow-lg">
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="md:hidden border-t bg-card absolute left-0 right-0 z-50 shadow-lg shadow-black/20 overflow-hidden"
+            >
             <div className="px-4 py-3 space-y-1">
               {/* User info */}
               <Link
                 href="/settings"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 hover:bg-accent transition-colors"
               >
                 <Avatar className="w-8 h-8">
                   <AvatarImage src={session.user.image || ""} />
-                  <AvatarFallback className="bg-gray-100 text-black text-sm">
+                  <AvatarFallback className="bg-muted text-foreground text-sm">
                     {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
                   </AvatarFallback>
                 </Avatar>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-black truncate">{session.user.name}</p>
-                  <p className="text-xs text-gray-500 truncate">{session.user.email}</p>
+                  <p className="text-sm font-medium text-foreground truncate">{session.user.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{session.user.email}</p>
                 </div>
               </Link>
 
@@ -963,13 +972,13 @@ export default function Home() {
               {/* Usage bar (mobile) */}
               {billingSummary?.monetization_enabled && (
                 <div className="flex items-center gap-2 px-3 py-2">
-                  <div className="flex-1 h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                  <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
                         billingSummary.usage_limit &&
                         billingSummary.usage_count / billingSummary.usage_limit > 0.8
                           ? "bg-red-500"
-                          : "bg-stone-900"
+                          : "bg-primary"
                       }`}
                       style={{
                         width: billingSummary.usage_limit
@@ -978,7 +987,7 @@ export default function Home() {
                       }}
                     />
                   </div>
-                  <span className="text-xs text-stone-500 tabular-nums whitespace-nowrap">
+                  <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                     {billingSummary.usage_limit
                       ? `${billingSummary.usage_count}/${billingSummary.usage_limit}`
                       : `${billingSummary.usage_count}`}
@@ -990,27 +999,27 @@ export default function Home() {
               <Link
                 href="/list"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-stone-700 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
               >
-                <List className="w-4 h-4 text-stone-400" />
+                <List className="w-4 h-4 text-muted-foreground" />
                 All Generations
               </Link>
               {isAdmin && (
                 <Link
                   href="/admin"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-stone-700 hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
                 >
-                  <Shield className="w-4 h-4 text-stone-400" />
+                  <Shield className="w-4 h-4 text-muted-foreground" />
                   Admin
                 </Link>
               )}
               <Link
                 href="/settings"
                 onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-stone-700 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-foreground hover:bg-accent transition-colors"
               >
-                <Settings className="w-4 h-4 text-stone-400" />
+                <Settings className="w-4 h-4 text-muted-foreground" />
                 Settings
               </Link>
 
@@ -1027,25 +1036,27 @@ export default function Home() {
                 Sign Out
               </button>
             </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-6 py-10">
         {/* Latest Generation Banner */}
+        <MotionFadeIn>
         {latestTask && (
           <Link href={`/tasks/${latestTask.id}`} className="block mb-8">
-            <div className="flex items-center justify-between p-4 rounded-xl border border-stone-200 bg-stone-50/50 hover:bg-stone-50 transition-colors group">
+            <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-muted/40 hover:bg-accent transition-colors group">
               <div className="flex items-center gap-4 min-w-0">
-                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-stone-900 flex items-center justify-center">
-                  <Film className="w-5 h-5 text-white" />
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
+                  <Film className="w-5 h-5 text-primary-foreground" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-stone-900 truncate">
+                  <p className="text-sm font-medium text-foreground truncate">
                     {latestTask.source_title}
                   </p>
-                  <div className="flex items-center gap-2 text-xs text-stone-500 mt-0.5">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                     <span className="capitalize">{latestTask.source_type}</span>
                     <span>&middot;</span>
                     <span>{new Date(latestTask.created_at).toLocaleDateString()}</span>
@@ -1068,14 +1079,14 @@ export default function Home() {
                 ) : (
                   <Badge variant="outline" className="text-xs">{latestTask.status}</Badge>
                 )}
-                <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-stone-600 transition-colors" />
+                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
               </div>
             </div>
           </Link>
         )}
 
         {isLoadingLatest && (
-          <div className="mb-8 p-4 rounded-xl border border-stone-200">
+          <div className="mb-8 p-4 rounded-xl border border-border">
             <div className="flex items-center gap-4">
               <Skeleton className="w-10 h-10 rounded-lg" />
               <div>
@@ -1085,16 +1096,18 @@ export default function Home() {
             </div>
           </div>
         )}
+        </MotionFadeIn>
 
         {/* Two Column Layout */}
+        <MotionFadeIn delay={0.05}>
         <div className="flex flex-col lg:flex-row gap-10 items-start">
           {/* Left Column — Form */}
           <div className="flex-1 min-w-0">
             <div className="mb-8">
-              <h2 className="text-2xl font-bold text-stone-900 mb-2">
+              <h2 className="text-2xl font-bold text-foreground mb-2">
                 Create New Clip
               </h2>
-              <p className="text-stone-500">
+              <p className="text-muted-foreground">
                 Paste a YouTube link or upload a video — AI handles the rest.
               </p>
             </div>
@@ -1115,8 +1128,8 @@ export default function Home() {
                     disabled={isLoading}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       sourceType === "youtube"
-                        ? "bg-stone-900 text-white shadow-sm"
-                        : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                        ? "bg-primary text-primary-foreground shadow-black/20 shadow-sm"
+                        : "bg-muted text-muted-foreground hover:bg-secondary"
                     }`}
                   >
                     <Youtube className="w-4 h-4" />
@@ -1128,8 +1141,8 @@ export default function Home() {
                     disabled={isLoading}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       sourceType === "upload"
-                        ? "bg-stone-900 text-white shadow-sm"
-                        : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+                        ? "bg-primary text-primary-foreground shadow-black/20 shadow-sm"
+                        : "bg-muted text-muted-foreground hover:bg-secondary"
                     }`}
                   >
                     <Upload className="w-4 h-4" />
@@ -1140,7 +1153,7 @@ export default function Home() {
                 {/* URL / Upload Input */}
                 {sourceType === "youtube" ? (
                   <div className="relative">
-                    <Youtube className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-stone-400" />
+                    <Youtube className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="youtube-url"
                       type="url"
@@ -1148,12 +1161,12 @@ export default function Home() {
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       disabled={isLoading}
-                      className="h-14 pl-12 text-base rounded-xl border-stone-300 focus:border-stone-500 placeholder:text-stone-400"
+                      className="h-14 pl-12 text-base rounded-xl border-border focus:border-ring placeholder:text-muted-foreground"
                     />
                   </div>
                 ) : (
                   <div
-                    className="relative border-2 border-dashed border-stone-300 rounded-xl p-8 text-center hover:border-stone-400 transition-colors cursor-pointer"
+                    className="relative border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-muted-foreground/50 transition-colors cursor-pointer"
                     onClick={() => !isLoading && fileInputRef.current?.click()}
                   >
                     <input
@@ -1165,13 +1178,13 @@ export default function Home() {
                       disabled={isLoading}
                       className="hidden"
                     />
-                    <Upload className="w-8 h-8 text-stone-400 mx-auto mb-3" />
+                    <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
                     {fileName ? (
-                      <p className="text-sm font-medium text-stone-900">{fileName}</p>
+                      <p className="text-sm font-medium text-foreground">{fileName}</p>
                     ) : (
                       <>
-                        <p className="text-sm font-medium text-stone-700">Drop a video file here or click to browse</p>
-                        <p className="text-xs text-stone-400 mt-1">MP4, MOV, AVI up to 500MB</p>
+                        <p className="text-sm font-medium text-foreground">Drop a video file here or click to browse</p>
+                        <p className="text-xs text-muted-foreground mt-1">MP4, MOV, AVI up to 500MB</p>
                       </>
                     )}
                   </div>
@@ -1179,16 +1192,16 @@ export default function Home() {
               </div>
 
               {/* Caption & Style Section */}
-              <Card className="border-stone-200">
+              <Card className="border-border">
                 <CardContent className="px-4 pt-0 pb-2.5 space-y-2.5">
-                  <div className="flex items-center gap-2 text-sm font-medium text-stone-900">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <Sparkles className="w-4 h-4" />
                     Style & Captions
                   </div>
 
                   {/* Caption Template Selector */}
                   <div className="space-y-2">
-                    <label className="text-sm text-stone-600">
+                    <label className="text-sm text-muted-foreground">
                       Caption Style
                     </label>
                     <Select value={captionTemplate} onValueChange={handleTemplateChange} disabled={isLoading}>
@@ -1202,7 +1215,7 @@ export default function Home() {
                           availableTemplates.map((template) => (
                             <SelectItem key={template.id} value={template.id} className="py-3">
                               <span className="font-medium">{template.name}</span>
-                              <span className="text-xs text-gray-500 ml-2">{template.description}</span>
+                              <span className="text-xs text-muted-foreground ml-2">{template.description}</span>
                             </SelectItem>
                           ))
                         ) : (
@@ -1215,7 +1228,7 @@ export default function Home() {
                   {activeCaptionTemplate?.pill_style && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <label className="text-sm text-stone-600 flex items-center gap-1.5">
+                        <label className="text-sm text-muted-foreground flex items-center gap-1.5">
                           <Palette className="w-3.5 h-3.5" />
                           Pill background
                         </label>
@@ -1225,7 +1238,7 @@ export default function Home() {
                             value={pillColor.slice(0, 7)}
                             onChange={(e) => setPillColor(`${e.target.value}CC`)}
                             disabled={isLoading}
-                            className="w-10 h-8 rounded border border-stone-300 cursor-pointer disabled:cursor-not-allowed"
+                            className="w-10 h-8 rounded border border-border cursor-pointer disabled:cursor-not-allowed"
                           />
                           <Input
                             type="text"
@@ -1242,7 +1255,7 @@ export default function Home() {
                               type="button"
                               onClick={() => setPillColor(color)}
                               disabled={isLoading}
-                              className="w-5 h-5 rounded border-2 border-stone-300 cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
+                              className="w-5 h-5 rounded border-2 border-border cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
                               style={{ backgroundColor: color.slice(0, 7) }}
                               title={color}
                             />
@@ -1250,7 +1263,7 @@ export default function Home() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm text-stone-600 flex items-center gap-1.5">
+                        <label className="text-sm text-muted-foreground flex items-center gap-1.5">
                           <Paintbrush className="w-3.5 h-3.5" />
                           Active word highlight
                         </label>
@@ -1260,7 +1273,7 @@ export default function Home() {
                             value={highlightColor.slice(0, 7)}
                             onChange={(e) => setHighlightColor(e.target.value)}
                             disabled={isLoading}
-                            className="w-10 h-8 rounded border border-stone-300 cursor-pointer disabled:cursor-not-allowed"
+                            className="w-10 h-8 rounded border border-border cursor-pointer disabled:cursor-not-allowed"
                           />
                           <Input
                             type="text"
@@ -1278,7 +1291,7 @@ export default function Home() {
                               type="button"
                               onClick={() => setHighlightColor(color)}
                               disabled={isLoading}
-                              className="w-5 h-5 rounded border-2 border-stone-300 cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
+                              className="w-5 h-5 rounded border-2 border-border cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
                               style={{ backgroundColor: color }}
                               title={color}
                             />
@@ -1289,7 +1302,7 @@ export default function Home() {
                   )}
 
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-stone-900">Processing mode</label>
+                    <label className="text-sm font-medium text-foreground">Processing mode</label>
                     <Select
                       value={processingMode}
                       onValueChange={setProcessingMode}
@@ -1305,7 +1318,7 @@ export default function Home() {
                           <SelectItem key={mode.id} value={mode.id}>
                             <div className="flex flex-col">
                               <span>{mode.name}</span>
-                              <span className="text-xs text-stone-500">{mode.description}</span>
+                              <span className="text-xs text-muted-foreground">{mode.description}</span>
                             </div>
                           </SelectItem>
                         ))}
@@ -1315,12 +1328,12 @@ export default function Home() {
 
                   {/* B-Roll Toggle */}
                   {brollAvailable && (
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-stone-50">
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/40">
                       <div className="flex items-center gap-3">
                         <Film className="w-4 h-4 text-purple-500" />
                         <div>
-                          <h3 className="text-sm font-medium text-stone-900">AI B-Roll</h3>
-                          <p className="text-xs text-stone-500">Auto-add stock footage from Pexels</p>
+                          <h3 className="text-sm font-medium text-foreground">AI B-Roll</h3>
+                          <p className="text-xs text-muted-foreground">Auto-add stock footage from Pexels</p>
                         </div>
                       </div>
                       <Switch
@@ -1332,12 +1345,12 @@ export default function Home() {
                   )}
 
                   {/* Output format */}
-                  <div className="flex items-center justify-between p-3 border rounded-lg bg-stone-50">
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/40">
                     <div className="flex items-center gap-3">
                       <Monitor className="w-4 h-4 text-blue-500" />
                       <div>
-                        <h3 className="text-sm font-medium text-stone-900">Wide format</h3>
-                        <p className="text-xs text-stone-500">Keep original aspect ratio instead of 9:16 vertical</p>
+                        <h3 className="text-sm font-medium text-foreground">Wide format</h3>
+                        <p className="text-xs text-muted-foreground">Keep original aspect ratio instead of 9:16 vertical</p>
                       </div>
                     </div>
                     <Switch
@@ -1348,12 +1361,12 @@ export default function Home() {
                   </div>
 
                   {/* Add subtitles */}
-                  <div className="flex items-center justify-between p-3 border rounded-lg bg-stone-50">
+                  <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/40">
                     <div className="flex items-center gap-3">
                       <Type className="w-4 h-4 text-emerald-500" />
                       <div>
-                        <h3 className="text-sm font-medium text-stone-900">Add subtitles</h3>
-                        <p className="text-xs text-stone-500">Burn captions onto clips (disable for faster processing)</p>
+                        <h3 className="text-sm font-medium text-foreground">Add subtitles</h3>
+                        <p className="text-xs text-muted-foreground">Burn captions onto clips (disable for faster processing)</p>
                       </div>
                     </div>
                     <Switch
@@ -1373,17 +1386,17 @@ export default function Home() {
                     : "max-h-0 opacity-0 pointer-events-none"
                 }`}
               >
-              <Card className="border-stone-200">
+              <Card className="border-border">
                 <CardContent className="px-4 pt-0 pb-2.5 space-y-2.5">
                   <div
                     className="flex items-center justify-between cursor-pointer"
                     onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
                   >
-                    <div className="flex items-center gap-2 text-sm font-medium text-stone-900">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                       <Paintbrush className="w-4 h-4" />
                       Font Customization
                     </div>
-                    <button type="button" className="text-xs text-stone-500 hover:text-stone-700 transition-colors">
+                    <button type="button" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
                       {showAdvancedOptions ? "Hide" : "Show"}
                     </button>
                   </div>
@@ -1392,11 +1405,11 @@ export default function Home() {
                     <div className="space-y-5 pt-1">
                       {/* Font Family Selector */}
                       <div className="space-y-2">
-                        <label className="text-sm text-stone-600 flex items-center gap-2">
+                        <label className="text-sm text-muted-foreground flex items-center gap-2">
                           <Type className="w-3.5 h-3.5" />
                           Font Family
                         </label>
-                        <div className="flex items-center justify-between gap-3 text-xs text-stone-500">
+                        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                           <span>{availableFonts.length} font{availableFonts.length === 1 ? "" : "s"} available</span>
                           <input
                             ref={fontUploadInputRef}
@@ -1456,9 +1469,9 @@ export default function Home() {
                       <div className="grid grid-cols-2 gap-4">
                         {/* Font Size Slider */}
                         <div className="space-y-2">
-                          <label className="text-sm text-stone-600">
+                          <label className="text-sm text-muted-foreground">
                             Size: {fontSize}px
-                            <span className="ml-2 text-xs text-stone-400">
+                            <span className="ml-2 text-xs text-muted-foreground">
                               Preview: {previewFontPx}px
                             </span>
                           </label>
@@ -1479,7 +1492,7 @@ export default function Home() {
                               className="w-full"
                             />
                           </div>
-                          <div className="flex justify-between text-xs text-stone-400">
+                          <div className="flex justify-between text-xs text-muted-foreground">
                             <span>24px</span>
                             <span>48px</span>
                           </div>
@@ -1487,7 +1500,7 @@ export default function Home() {
 
                         {/* Font Color Picker */}
                         <div className="space-y-2">
-                          <label className="text-sm text-stone-600 flex items-center gap-1.5">
+                          <label className="text-sm text-muted-foreground flex items-center gap-1.5">
                             <Palette className="w-3.5 h-3.5" />
                             Color
                           </label>
@@ -1497,7 +1510,7 @@ export default function Home() {
                               value={fontColor}
                               onChange={(e) => setFontColor(e.target.value)}
                               disabled={isLoading}
-                              className="w-10 h-8 rounded border border-stone-300 cursor-pointer disabled:cursor-not-allowed"
+                              className="w-10 h-8 rounded border border-border cursor-pointer disabled:cursor-not-allowed"
                             />
                             <Input
                               type="text"
@@ -1516,7 +1529,7 @@ export default function Home() {
                                 type="button"
                                 onClick={() => setFontColor(color)}
                                 disabled={isLoading}
-                                className="w-5 h-5 rounded border-2 border-stone-300 cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
+                                className="w-5 h-5 rounded border-2 border-border cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
                                 style={{ backgroundColor: color }}
                                 title={color}
                               />
@@ -1525,14 +1538,14 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between p-3 border rounded-lg bg-stone-50">
+                      <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/40">
                         <div className="flex items-center gap-3">
-                          <Type className="w-4 h-4 text-stone-500" />
+                          <Type className="w-4 h-4 text-muted-foreground" />
                           <div>
-                            <h3 className="text-sm font-medium text-stone-900">
+                            <h3 className="text-sm font-medium text-foreground">
                               Save as default subtitle style
                             </h3>
-                            <p className="text-xs text-stone-500">
+                            <p className="text-xs text-muted-foreground">
                               {session?.user?.id
                                 ? "Remembers font, size, color, and template for next time"
                                 : "Sign in to save defaults"}
@@ -1588,48 +1601,48 @@ export default function Home() {
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-stone-600">Processing</span>
-                      <span className="text-stone-900 font-medium">{progress}%</span>
+                      <span className="text-muted-foreground">Processing</span>
+                      <span className="text-foreground font-medium">{progress}%</span>
                     </div>
                     <Progress value={progress} className="h-2" />
                   </div>
 
                   {currentStep && statusMessage && (
-                    <div className="bg-stone-50 rounded-xl p-4 space-y-3 border border-stone-200">
+                    <div className="bg-muted/40 rounded-xl p-4 space-y-3 border border-border">
                       <div className="flex items-center gap-3">
                         {getStepIcon(currentStep)}
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-stone-900">{statusMessage}</p>
+                          <p className="text-sm font-medium text-foreground">{statusMessage}</p>
                           {sourceTitle && (
-                            <p className="text-xs text-stone-500 mt-1">Processing: {sourceTitle}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Processing: {sourceTitle}</p>
                           )}
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'validation' || currentStep === 'user_check' ? 'bg-blue-100' : progress > 15 ? 'bg-green-100' : 'bg-stone-100'}`}>
-                          <CheckCircle className={`w-3 h-3 ${progress > 15 ? 'text-green-500' : 'text-stone-400'}`} />
-                          <span className={progress > 15 ? 'text-green-700' : 'text-stone-600'}>Validation</span>
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'validation' || currentStep === 'user_check' ? 'bg-blue-100' : progress > 15 ? 'bg-green-100' : 'bg-muted'}`}>
+                          <CheckCircle className={`w-3 h-3 ${progress > 15 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <span className={progress > 15 ? 'text-green-700' : 'text-muted-foreground'}>Validation</span>
                         </div>
-                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'download' || currentStep === 'youtube_info' ? 'bg-green-100' : progress > 30 ? 'bg-green-100' : 'bg-stone-100'}`}>
-                          <CheckCircle className={`w-3 h-3 ${progress > 30 ? 'text-green-500' : 'text-stone-400'}`} />
-                          <span className={progress > 30 ? 'text-green-700' : 'text-stone-600'}>Download</span>
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'download' || currentStep === 'youtube_info' ? 'bg-green-100' : progress > 30 ? 'bg-green-100' : 'bg-muted'}`}>
+                          <CheckCircle className={`w-3 h-3 ${progress > 30 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <span className={progress > 30 ? 'text-green-700' : 'text-muted-foreground'}>Download</span>
                         </div>
-                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'transcript' ? 'bg-purple-100' : progress > 45 ? 'bg-green-100' : 'bg-stone-100'}`}>
-                          <CheckCircle className={`w-3 h-3 ${progress > 45 ? 'text-green-500' : 'text-stone-400'}`} />
-                          <span className={progress > 45 ? 'text-green-700' : 'text-stone-600'}>Transcript</span>
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'transcript' ? 'bg-purple-100' : progress > 45 ? 'bg-green-100' : 'bg-muted'}`}>
+                          <CheckCircle className={`w-3 h-3 ${progress > 45 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <span className={progress > 45 ? 'text-green-700' : 'text-muted-foreground'}>Transcript</span>
                         </div>
-                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'ai_analysis' ? 'bg-orange-100' : progress > 60 ? 'bg-green-100' : 'bg-stone-100'}`}>
-                          <CheckCircle className={`w-3 h-3 ${progress > 60 ? 'text-green-500' : 'text-stone-400'}`} />
-                          <span className={progress > 60 ? 'text-green-700' : 'text-stone-600'}>AI Analysis</span>
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'ai_analysis' ? 'bg-orange-100' : progress > 60 ? 'bg-green-100' : 'bg-muted'}`}>
+                          <CheckCircle className={`w-3 h-3 ${progress > 60 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <span className={progress > 60 ? 'text-green-700' : 'text-muted-foreground'}>AI Analysis</span>
                         </div>
-                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'clip_generation' ? 'bg-indigo-100' : progress > 75 ? 'bg-green-100' : 'bg-stone-100'}`}>
-                          <CheckCircle className={`w-3 h-3 ${progress > 75 ? 'text-green-500' : 'text-stone-400'}`} />
-                          <span className={progress > 75 ? 'text-green-700' : 'text-stone-600'}>Create Clips</span>
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'clip_generation' ? 'bg-indigo-100' : progress > 75 ? 'bg-green-100' : 'bg-muted'}`}>
+                          <CheckCircle className={`w-3 h-3 ${progress > 75 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <span className={progress > 75 ? 'text-green-700' : 'text-muted-foreground'}>Create Clips</span>
                         </div>
-                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'complete' ? 'bg-green-100' : progress >= 100 ? 'bg-green-100' : 'bg-stone-100'}`}>
-                          <CheckCircle className={`w-3 h-3 ${progress >= 100 ? 'text-green-500' : 'text-stone-400'}`} />
-                          <span className={progress >= 100 ? 'text-green-700' : 'text-stone-600'}>Complete</span>
+                        <div className={`flex items-center gap-2 p-2 rounded-lg ${currentStep === 'complete' ? 'bg-green-100' : progress >= 100 ? 'bg-green-100' : 'bg-muted'}`}>
+                          <CheckCircle className={`w-3 h-3 ${progress >= 100 ? 'text-green-500' : 'text-muted-foreground'}`} />
+                          <span className={progress >= 100 ? 'text-green-700' : 'text-muted-foreground'}>Complete</span>
                         </div>
                       </div>
                     </div>
@@ -1646,9 +1659,9 @@ export default function Home() {
                 </Alert>
               )}
 
-              <p className="text-xs text-stone-500">
+              <p className="text-xs text-muted-foreground">
                 Completion emails use your user preference in{" "}
-                <Link href="/settings" className="font-medium text-stone-700 underline underline-offset-2">
+                <Link href="/settings" className="font-medium text-foreground underline underline-offset-2">
                   Settings
                 </Link>.
               </p>
@@ -1704,7 +1717,7 @@ export default function Home() {
                 />
               ) : (
               <>
-              <div className="flex items-center justify-center gap-2 mb-5 text-sm text-stone-400">
+              <div className="flex items-center justify-center gap-2 mb-5 text-sm text-muted-foreground">
                 <Monitor className="w-4 h-4" />
                 <span>Live Preview</span>
               </div>
@@ -1874,29 +1887,29 @@ export default function Home() {
 
                 {/* Caption info below phone */}
                 <div className="mt-6 space-y-3 px-2">
-                  <div className="flex items-center justify-between text-xs text-stone-500">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Font</span>
-                    <span className="text-stone-700 font-medium">
+                    <span className="text-foreground font-medium">
                       {availableFonts.find(f => f.name === fontFamily)?.display_name || fontFamily}
                     </span>
                   </div>
                   <Separator />
-                  <div className="flex items-center justify-between text-xs text-stone-500">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Size</span>
-                    <span className="text-stone-700 font-medium">{fontSize}px</span>
+                    <span className="text-foreground font-medium">{fontSize}px</span>
                   </div>
                   <Separator />
-                  <div className="flex items-center justify-between text-xs text-stone-500">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Color</span>
                     <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full border border-stone-300" style={{ backgroundColor: fontColor }} />
-                      <span className="text-stone-700 font-medium">{fontColor}</span>
+                      <div className="w-3 h-3 rounded-full border border-border" style={{ backgroundColor: fontColor }} />
+                      <span className="text-foreground font-medium">{fontColor}</span>
                     </div>
                   </div>
                   <Separator />
-                  <div className="flex items-center justify-between text-xs text-stone-500">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Template</span>
-                    <span className="text-stone-700 font-medium">
+                    <span className="text-foreground font-medium">
                       {availableTemplates.find(t => t.id === captionTemplate)?.name || "Default"}
                     </span>
                   </div>
@@ -1908,6 +1921,7 @@ export default function Home() {
             </div>
           </div>
         </div>
+        </MotionFadeIn>
       </div>
     </div>
   );

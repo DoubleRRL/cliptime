@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { motion } from "motion/react";
+import { motionSpring } from "@/components/motion-primitives";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,37 +44,16 @@ function ScrollReveal({
   className?: string;
   delay?: number;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-          observer.unobserve(entry.target);
-        }
-      },
-      { threshold: 0.1, rootMargin: "0px 0px -60px 0px" }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
-
   return (
-    <div
-      ref={ref}
+    <motion.div
+      initial={{ opacity: 0, y: 30, filter: "blur(4px)" }}
+      whileInView={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      viewport={{ once: true, margin: "0px 0px -60px 0px" }}
+      transition={{ ...motionSpring, delay }}
       className={className}
-      style={{
-        opacity: isVisible ? 1 : 0,
-        transform: isVisible ? "translateY(0)" : "translateY(30px)",
-        transition: `opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1) ${delay}s, transform 0.7s cubic-bezier(0.16, 1, 0.3, 1) ${delay}s`,
-      }}
     >
       {children}
-    </div>
+    </motion.div>
   );
 }
 
@@ -204,7 +185,7 @@ export default function LandingPage() {
       <nav
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
           scrolled
-            ? "bg-background/80 backdrop-blur-xl border-b shadow-sm"
+            ? "bg-background/80 backdrop-blur-xl border-b border-border shadow-sm"
             : "bg-transparent"
         }`}
       >
@@ -292,7 +273,7 @@ export default function LandingPage() {
 
         {/* Mobile nav dropdown */}
         {mobileNavOpen && (
-          <div className="md:hidden border-t bg-background/95 backdrop-blur-xl">
+          <div className="md:hidden border-t border-border bg-background/95 backdrop-blur-xl">
             <div className="max-w-6xl mx-auto px-6 py-4 space-y-1">
               <a
                 href="#how-it-works"
@@ -350,10 +331,12 @@ export default function LandingPage() {
       </nav>
 
       {/* ─── HERO ─── */}
-      <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden">
-        {/* Subtle background pattern */}
+      <section className="relative pt-32 pb-20 md:pt-40 md:pb-28 overflow-hidden border-b border-border/50">
+        {/* Dark hero atmosphere */}
+        <div className="absolute inset-0 bg-gradient-to-b from-background via-background to-muted/30" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,oklch(0.35_0.02_285/0.4),transparent)]" />
         <div
-          className="absolute inset-0 opacity-[0.02]"
+          className="absolute inset-0 opacity-[0.04]"
           style={{
             backgroundImage:
               "radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)",
@@ -488,7 +471,7 @@ export default function LandingPage() {
           <div className="grid md:grid-cols-3 gap-6">
             {STEPS.map((step, i) => (
               <ScrollReveal key={step.num} delay={i * 0.1}>
-                <Card className="h-full py-0 gap-0 hover:shadow-md transition-shadow duration-300">
+                <Card className="h-full py-0 gap-0 border-border/60 hover:shadow-md transition-shadow duration-300">
                   <CardContent className="p-8">
                     <span
                       className="text-6xl font-black leading-none block mb-6 text-muted-foreground/25 select-none"
@@ -543,7 +526,7 @@ export default function LandingPage() {
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {FEATURES.map((feature, i) => (
               <ScrollReveal key={feature.title} delay={i * 0.07}>
-                <Card className="h-full py-0 gap-0 hover:shadow-md transition-all duration-300 hover:-translate-y-1">
+                <Card className="h-full py-0 gap-0 border-border/60 hover:shadow-md transition-all duration-300 hover:-translate-y-1">
                   <CardContent className="p-6">
                     <div className="w-10 h-10 rounded-xl bg-secondary flex items-center justify-center mb-4">
                       <feature.icon className="w-5 h-5 text-foreground" />
@@ -775,7 +758,7 @@ export default function LandingPage() {
           </ScrollReveal>
 
           <ScrollReveal delay={0.1}>
-            <Card className="py-0 gap-0">
+            <Card className="py-0 gap-0 border-border/60">
               <CardContent className="p-6 md:p-8">
                 <p className="text-xs font-medium text-muted-foreground mb-3">
                   Get running in 30 seconds:
@@ -915,9 +898,7 @@ function HeroVisual() {
             style={{ aspectRatio: "16/9" }}
           >
             {/* Gradient simulating video content */}
-            <div
-              className="absolute inset-0 bg-gradient-to-br from-stone-200 via-stone-100 to-stone-200"
-            />
+            <div className="absolute inset-0 bg-gradient-to-br from-muted via-secondary to-muted" />
 
             {/* Subtle grid overlay */}
             <div
@@ -989,24 +970,24 @@ function HeroVisual() {
           <div className="flex gap-2.5 justify-center">
             {[
               {
-                bg: "linear-gradient(135deg, #e8e5e0, #d6d3cd)",
+                bg: "linear-gradient(135deg, oklch(0.32 0.01 285), oklch(0.26 0.008 285))",
                 score: 92,
                 label: "Hook moment",
               },
               {
-                bg: "linear-gradient(135deg, #dfe0e4, #cdd0d6)",
+                bg: "linear-gradient(135deg, oklch(0.30 0.012 285), oklch(0.24 0.008 285))",
                 score: 87,
                 label: "Key insight",
               },
               {
-                bg: "linear-gradient(135deg, #e4e2df, #d3d0cb)",
+                bg: "linear-gradient(135deg, oklch(0.28 0.01 285), oklch(0.22 0.006 285))",
                 score: 78,
                 label: "CTA close",
               },
             ].map((clip, i) => (
               <div
                 key={i}
-                className="relative flex-1 rounded-lg overflow-hidden border shadow-sm"
+                className="relative flex-1 rounded-lg overflow-hidden border border-border/60 shadow-sm"
                 style={{
                   aspectRatio: "9/16",
                   background: clip.bg,

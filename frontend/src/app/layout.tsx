@@ -6,6 +6,7 @@ import { DataFastIdentity } from "@/components/datafast-identity";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { FeedbackButton } from "@/components/feedback-button";
+import { Providers } from "@/components/providers";
 
 const defaultMetadataBase = "http://localhost:3000";
 
@@ -64,7 +65,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         {isDataFastEnabled ? (
           <>
@@ -87,12 +88,14 @@ export default function RootLayout({
         ) : null}
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} ${syne.variable} antialiased`}>
-        <TooltipProvider>
-          {children}
-          <DataFastIdentity />
-          <FeedbackButton />
-          <Toaster />
-        </TooltipProvider>
+        <Providers>
+          <TooltipProvider>
+            {children}
+            <DataFastIdentity />
+            <FeedbackButton />
+            <Toaster />
+          </TooltipProvider>
+        </Providers>
       </body>
     </html>
   );

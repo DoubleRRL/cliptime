@@ -233,7 +233,7 @@ export default function SettingsPage() {
 
   if (isPending || isFetching) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="space-y-4">
           <Skeleton className="h-4 w-32 mx-auto" />
           <Skeleton className="h-4 w-48 mx-auto" />
@@ -245,13 +245,13 @@ export default function SettingsPage() {
 
   if (!session?.user) {
     return (
-      <div className="min-h-screen bg-white">
+      <div className="min-h-screen bg-background">
         <div className="max-w-4xl mx-auto px-4 py-24">
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-black mb-4">
+            <h1 className="text-3xl font-bold text-foreground mb-4">
               Sign In Required
             </h1>
-            <p className="text-gray-600 mb-8">
+            <p className="text-muted-foreground mb-8">
               You need to sign in to access your settings
             </p>
             <Link href="/sign-in">
@@ -264,9 +264,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="border-b bg-white">
+      <div className="border-b border-border bg-background">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex justify-between items-center">
             <Link href="/">
@@ -289,13 +289,13 @@ export default function SettingsPage() {
               </Button>
               <Avatar className="w-8 h-8">
                 <AvatarImage src={session.user.image || ""} />
-                <AvatarFallback className="bg-gray-100 text-black text-sm">
+                <AvatarFallback className="bg-muted text-foreground text-sm">
                   {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-black">{session.user.name}</p>
-                <p className="text-xs text-gray-500">{session.user.email}</p>
+                <p className="text-sm font-medium text-foreground">{session.user.name}</p>
+                <p className="text-xs text-muted-foreground">{session.user.email}</p>
               </div>
             </div>
           </div>
@@ -307,12 +307,12 @@ export default function SettingsPage() {
         <div className="max-w-xl mx-auto">
           <div className="mb-8">
             <div className="flex items-center gap-2 mb-2">
-              <Settings className="w-6 h-6 text-black" />
-              <h2 className="text-2xl font-bold text-black">
+              <Settings className="w-6 h-6 text-foreground" />
+              <h2 className="text-2xl font-bold text-foreground">
                 Settings
               </h2>
             </div>
-            <p className="text-gray-600">
+            <p className="text-muted-foreground">
               Configure your default preferences for video clip generation
             </p>
           </div>
@@ -323,17 +323,17 @@ export default function SettingsPage() {
             {/* Font Preferences Section */}
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-semibold text-black mb-1">
+                <h3 className="text-lg font-semibold text-foreground mb-1">
                   Default Font Settings
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   These settings will be applied to all new video processing tasks
                 </p>
               </div>
 
               {/* Font Family Selector */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-black flex items-center gap-2">
+                <Label className="text-sm font-medium text-foreground flex items-center gap-2">
                   <Type className="w-4 h-4" />
                   Font Family
                 </Label>
@@ -356,7 +356,7 @@ export default function SettingsPage() {
 
               {/* Font Size Slider */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-black">
+                <Label className="text-sm font-medium text-foreground">
                   Font Size: {fontSize}px
                 </Label>
                 <div className="px-2">
@@ -370,7 +370,7 @@ export default function SettingsPage() {
                     className="w-full"
                   />
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
+                <div className="flex justify-between text-xs text-muted-foreground">
                   <span>12px</span>
                   <span>48px</span>
                 </div>
@@ -378,7 +378,7 @@ export default function SettingsPage() {
 
               {/* Caption Template */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-black">
+                <Label className="text-sm font-medium text-foreground">
                   Default Caption Style
                 </Label>
                 <Select value={captionTemplate} onValueChange={setCaptionTemplate} disabled={isLoading}>
@@ -400,7 +400,7 @@ export default function SettingsPage() {
 
               {/* Font Color Picker */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-black flex items-center gap-2">
+                <Label className="text-sm font-medium text-foreground flex items-center gap-2">
                   <Palette className="w-4 h-4" />
                   Font Color
                 </Label>
@@ -410,7 +410,7 @@ export default function SettingsPage() {
                     value={fontColor}
                     onChange={(e) => setFontColor(e.target.value)}
                     disabled={isLoading}
-                    className="w-12 h-10 rounded border border-gray-300 cursor-pointer disabled:cursor-not-allowed"
+                    className="w-12 h-10 rounded border border-border cursor-pointer disabled:cursor-not-allowed"
                   />
                   <Input
                     type="text"
@@ -429,7 +429,7 @@ export default function SettingsPage() {
                       type="button"
                       onClick={() => setFontColor(color)}
                       disabled={isLoading}
-                      className="w-8 h-8 rounded border-2 border-gray-300 cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
+                      className="w-8 h-8 rounded border-2 border-border cursor-pointer hover:scale-110 transition-transform disabled:cursor-not-allowed"
                       style={{ backgroundColor: color }}
                       title={color}
                     />
@@ -439,7 +439,7 @@ export default function SettingsPage() {
 
               {/* Preview */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium text-black">Preview</Label>
+                <Label className="text-sm font-medium text-foreground">Preview</Label>
                 <div className="p-6 bg-black rounded-lg flex items-center justify-center min-h-[100px]">
                   <p
                     style={{
@@ -460,19 +460,19 @@ export default function SettingsPage() {
             {/* Notifications Section */}
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-semibold text-black mb-1">
+                <h3 className="text-lg font-semibold text-foreground mb-1">
                   Notifications
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Manage how you receive updates about your clips
                 </p>
               </div>
 
               <div className="flex items-center justify-between">
-                <Label htmlFor="completion-emails" className="flex items-center gap-2 text-sm font-medium text-black cursor-pointer">
+                <Label htmlFor="completion-emails" className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
                   <Mail className="w-4 h-4" />
                   Completion emails
-                  <span className="text-gray-500 font-normal">— get notified when clips are ready</span>
+                  <span className="text-muted-foreground font-normal">— get notified when clips are ready</span>
                 </Label>
                 <Switch
                   id="completion-emails"
@@ -487,18 +487,18 @@ export default function SettingsPage() {
 
             {/* Success/Error Messages */}
             {success && (
-              <Alert className="border-green-200 bg-green-50">
-                <CheckCircle className="h-4 w-4 text-green-500" />
-                <AlertDescription className="text-sm text-green-700">
+              <Alert className="border-green-500/20 bg-green-500/10">
+                <CheckCircle className="h-4 w-4 text-green-400" />
+                <AlertDescription className="text-sm text-green-400">
                   Preferences saved successfully!
                 </AlertDescription>
               </Alert>
             )}
 
             {error && (
-              <Alert className="border-red-200 bg-red-50">
-                <AlertCircle className="h-4 w-4 text-red-500" />
-                <AlertDescription className="text-sm text-red-700">
+              <Alert className="border-red-500/20 bg-red-500/10">
+                <AlertCircle className="h-4 w-4 text-red-400" />
+                <AlertDescription className="text-sm text-red-400">
                   {error}
                 </AlertDescription>
               </Alert>
@@ -506,18 +506,18 @@ export default function SettingsPage() {
 
             {/* Save Button */}
             {billingSummary?.monetization_enabled && (
-              <div className="border rounded-lg p-4 bg-gray-50 space-y-3">
+              <div className="border border-border rounded-lg p-4 bg-muted/40 space-y-3">
                 <div>
-                  <h3 className="text-lg font-semibold text-black">Billing</h3>
+                  <h3 className="text-lg font-semibold text-foreground">Billing</h3>
                   {billingSummary.plan !== "pro" && (
-                    <p className="text-sm text-gray-600">Pro plan: ${proPriceMonthly}/month</p>
+                    <p className="text-sm text-muted-foreground">Pro plan: ${proPriceMonthly}/month</p>
                   )}
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-muted-foreground">
                     {billingSummary.usage_limit === null
                       ? `${billingSummary.usage_count} generations in this billing period`
                       : `${billingSummary.usage_count}/${billingSummary.usage_limit} generations used this period`}
                   </p>
-                  <p className="text-sm text-gray-500 capitalize">
+                  <p className="text-sm text-muted-foreground capitalize">
                     Plan: {billingSummary.plan} ({billingSummary.subscription_status})
                   </p>
                 </div>

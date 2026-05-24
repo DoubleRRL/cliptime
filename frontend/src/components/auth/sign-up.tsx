@@ -81,7 +81,7 @@ export function SignUp() {
           </Button>
         </form>
         {message && (
-          <p className={`mt-4 text-sm ${message.includes("successfully") ? "text-green-600" : "text-red-600"}`}>
+          <p className={`mt-4 text-sm ${message.includes("successfully") ? "text-emerald-400" : "text-red-400"}`}>
             {message}
           </p>
         )}
