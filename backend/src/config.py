@@ -42,6 +42,13 @@ class Config:
         self.queued_task_timeout_seconds = int(
             os.getenv("QUEUED_TASK_TIMEOUT_SECONDS", "180")
         )
+        self.processing_task_timeout_seconds = int(
+            os.getenv("PROCESSING_TASK_TIMEOUT_SECONDS", "14400")
+        )
+        self.worker_max_jobs = int(os.getenv("WORKER_MAX_JOBS", "1"))
+        self.worker_job_timeout_seconds = int(
+            os.getenv("WORKER_JOB_TIMEOUT_SECONDS", "21600")
+        )
 
         self.self_host = self._get_bool_env("SELF_HOST", True)
         self.monetization_enabled = not self.self_host

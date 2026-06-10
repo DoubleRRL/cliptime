@@ -87,6 +87,23 @@ class TaskService:
         age_seconds = (now - updated_at).total_seconds()
         return age_seconds >= self.config.queued_task_timeout_seconds
 
+    def _is_stale_processing_task(self, task: Dict[str, Any]) -> bool:
+        """Detect processing tasks with no recent worker updates."""
+        if task.get("status") != "processing":
+            return False
+
+        updated_at = task.get("updated_at") or task.get("created_at")
+        if not updated_at:
+            return False
+
+        now = (
+            datetime.now(updated_at.tzinfo)
+            if getattr(updated_at, "tzinfo", None)
+            else datetime.utcnow()
+        )
+        age_seconds = (now - updated_at).total_seconds()
+        return age_seconds >= self.config.processing_task_timeout_seconds
+
     async def create_task_with_source(
         self,
         user_id: str,
@@ -228,6 +245,8 @@ class TaskService:
                 perf_counter() - pipeline_start, 3
             )
 
+            # Checkpoint transcript + analysis before clip render so ARQ retries
+            # can skip Whisper/Ollama if the worker times out during rendering.
             await self.cache_repo.upsert_cache(
                 self.db,
                 cache_key=cache_key,
@@ -236,6 +255,7 @@ class TaskService:
                 transcript_text=result.get("transcript"),
                 analysis_json=result.get("analysis_json"),
             )
+            await self.db.commit()
 
             # Render clips incrementally: render, save, notify one at a time
             segments_to_render = result.get("segments_to_render", [])
@@ -474,6 +494,28 @@ class TaskService:
                 progress_message=(
                     "Task timed out while waiting in queue. "
                     "Ensure the worker service is running and healthy (docker-compose logs -f worker)."
+                ),
+            )
+            task = await self.task_repo.get_task_by_id(self.db, task_id)
+            if not task:
+                return None
+
+        if self._is_stale_processing_task(task):
+            timeout_seconds = self.config.processing_task_timeout_seconds
+            logger.warning(
+                "Task %s stuck in processing status for over %ss; marking as error",
+                task_id,
+                timeout_seconds,
+            )
+            await self.task_repo.update_task_status(
+                self.db,
+                task_id,
+                "error",
+                progress=task.get("progress") or 0,
+                progress_message=(
+                    "Processing timed out with no progress updates. "
+                    "Cancel and resume the task, or check worker logs "
+                    "(docker compose logs -f worker)."
                 ),
             )
             task = await self.task_repo.get_task_by_id(self.db, task_id)

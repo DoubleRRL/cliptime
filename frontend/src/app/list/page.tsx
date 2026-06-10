@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +49,8 @@ interface Task {
   source_title: string;
   source_type: string;
   status: string;
+  progress?: number | null;
+  progress_message?: string | null;
   clips_count: number;
   created_at: string;
   updated_at: string;
@@ -126,6 +128,14 @@ export default function ListPage() {
   const [activeBatchAction, setActiveBatchAction] = useState<BatchAction>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
+  const refreshTasks = useCallback(async () => {
+    const nextTasks = await fetchTasksList();
+    setTasks(nextTasks);
+    setSelectedTaskIds((current) =>
+      current.filter((taskId) => nextTasks.some((task) => task.id === taskId)),
+    );
+  }, []);
+
   useEffect(() => {
     const loadTasks = async () => {
       if (!session?.user?.id) {
@@ -138,11 +148,7 @@ export default function ListPage() {
       try {
         setIsLoading(true);
         setError(null);
-        const nextTasks = await fetchTasksList();
-        setTasks(nextTasks);
-        setSelectedTaskIds((current) =>
-          current.filter((taskId) => nextTasks.some((task) => task.id === taskId)),
-        );
+        await refreshTasks();
       } catch (err) {
         console.error("Error fetching tasks:", err);
         setError(err instanceof Error ? err.message : "Failed to load tasks");
@@ -152,15 +158,22 @@ export default function ListPage() {
     };
 
     void loadTasks();
-  }, [session?.user?.id]);
+  }, [session?.user?.id, refreshTasks]);
 
-  const refreshTasks = async () => {
-    const nextTasks = await fetchTasksList();
-    setTasks(nextTasks);
-    setSelectedTaskIds((current) =>
-      current.filter((taskId) => nextTasks.some((task) => task.id === taskId)),
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const hasActiveTasks = tasks.some((task) =>
+      ACTIVE_TASK_STATUSES.includes(task.status),
     );
-  };
+    if (!hasActiveTasks) return;
+
+    const intervalId = window.setInterval(() => {
+      void refreshTasks();
+    }, 30_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [session?.user?.id, tasks, refreshTasks]);
 
   const selectedTasks = tasks.filter((task) => selectedTaskIds.includes(task.id));
   const selectedCount = selectedTasks.length;
@@ -569,7 +582,20 @@ export default function ListPage() {
                             <span>
                               {task.clips_count} {task.clips_count === 1 ? "clip" : "clips"}
                             </span>
+                            {ACTIVE_TASK_STATUSES.includes(task.status) &&
+                            typeof task.progress === "number" ? (
+                              <>
+                                <Separator orientation="vertical" className="h-3" />
+                                <span>{task.progress}%</span>
+                              </>
+                            ) : null}
                           </div>
+                          {ACTIVE_TASK_STATUSES.includes(task.status) &&
+                          task.progress_message ? (
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {task.progress_message}
+                            </p>
+                          ) : null}
                         </div>
 
                         <div className="flex-shrink-0">

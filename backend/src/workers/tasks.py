@@ -205,8 +205,8 @@ class WorkerSettings:
 
     # Retry settings
     max_tries = 3  # Retry failed jobs up to 3 times
-    job_timeout = 10800  # 3 hour timeout for video processing
+    job_timeout = config.worker_job_timeout_seconds
 
-    # Worker pool settings
-    max_jobs = 4  # Process up to 4 jobs simultaneously
+    # Worker pool settings — serialize heavy video jobs by default
+    max_jobs = config.worker_max_jobs
     cron_jobs = []

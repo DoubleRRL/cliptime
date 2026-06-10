@@ -358,6 +358,8 @@ class TaskRepository:
                     "source_title": row.source_title,
                     "source_type": row.source_type,
                     "status": row.status,
+                    "progress": getattr(row, "progress", None),
+                    "progress_message": getattr(row, "progress_message", None),
                     "processing_mode": getattr(row, "processing_mode", "fast"),
                     "completion_notification_sent_at": getattr(
                         row, "completion_notification_sent_at", None
