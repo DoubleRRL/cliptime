@@ -4,6 +4,7 @@ Task service - orchestrates task creation and processing workflow.
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any, Optional, Callable
+import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -11,17 +12,13 @@ import json
 import hashlib
 from time import perf_counter
 
-import redis.asyncio as redis
-
+from ..redis_client import get_redis
+from ..utils.async_helpers import run_in_thread
 from ..repositories.task_repository import TaskRepository
 from ..repositories.source_repository import SourceRepository
 from ..repositories.clip_repository import ClipRepository
 from ..repositories.cache_repository import CacheRepository
 from .video_service import VideoService
-from .task_completion_email_service import (
-    TaskCompletionEmailService,
-    TaskCompletionRecipient,
-)
 from ..config import Config, get_config
 from ..clip_editor import (
     trim_clip_file,
@@ -29,9 +26,38 @@ from ..clip_editor import (
     merge_clip_files,
     overlay_custom_captions,
 )
-from ..video_utils import parse_timestamp_to_seconds
+from ..video_utils import (
+    parse_timestamp_to_seconds,
+    load_cached_transcript_data,
+    get_words_in_range,
+)
+from ..file_cleanup import delete_clip_files
 
 logger = logging.getLogger(__name__)
+
+
+def compute_re_render_bounds(
+    start_seconds: float,
+    end_seconds: float,
+    start_delta_seconds: float,
+    end_delta_seconds: float,
+    video_duration: float,
+    min_duration: float = 3.0,
+) -> tuple[float, float]:
+    """Compute clamped source bounds after trim/extend deltas."""
+    new_start = start_seconds + start_delta_seconds
+    new_end = end_seconds - end_delta_seconds
+
+    new_start = max(0.0, min(new_start, video_duration))
+    new_end = max(0.0, min(new_end, video_duration))
+
+    if new_end <= new_start:
+        raise ValueError("Clip boundaries are invalid after adjustment")
+
+    if new_end - new_start < min_duration:
+        raise ValueError(f"Clip must be at least {min_duration:.0f} seconds long")
+
+    return new_start, new_end
 
 
 class TaskService:
@@ -114,6 +140,7 @@ class TaskService:
         font_color: str = "#FFFFFF",
         caption_template: str = "default",
         processing_mode: str = "quality",
+        llm_model: Optional[str] = None,
     ) -> str:
         """
         Create a new task with associated source.
@@ -149,6 +176,7 @@ class TaskService:
             font_color=font_color,
             caption_template=caption_template,
             processing_mode=processing_mode,
+            llm_model=llm_model,
         )
 
         logger.info(f"Created task {task_id} for user {user_id}")
@@ -181,6 +209,27 @@ class TaskService:
             logger.info(f"Starting processing for task {task_id}")
             started_at = datetime.utcnow()
             stage_timings: Dict[str, float] = {}
+
+            # Idempotent retries: drop partial clips from a prior failed run.
+            existing_task = await self.task_repo.get_task_by_id(self.db, task_id)
+            if existing_task and existing_task.get("status") in {
+                "processing",
+                "error",
+            }:
+                partial_clips = await self.clip_repo.get_clips_by_task(
+                    self.db, task_id
+                )
+                if partial_clips:
+                    delete_clip_files(partial_clips)
+                    await self.clip_repo.delete_clips_by_task(self.db, task_id)
+                    await self.task_repo.update_task_clips(self.db, task_id, [])
+                    await self.db.commit()
+                    logger.info(
+                        "Cleared %s partial clip(s) before retry for task %s",
+                        len(partial_clips),
+                        task_id,
+                    )
+
             cache_key = self._build_cache_key(url, source_type, processing_mode)
 
             cache_entry = await self.cache_repo.get_cache(self.db, cache_key)
@@ -268,81 +317,115 @@ class TaskService:
             )
             await self.db.commit()
 
-            # Render clips incrementally: render, save, notify one at a time
+            # Render clips in parallel (bounded), persisting and notifying as
+            # each finishes. DB writes stay in this coroutine so the shared
+            # AsyncSession is never used concurrently.
             segments_to_render = result.get("segments_to_render", [])
             video_path = Path(result["video_path"])
             total_clips = len(segments_to_render)
             clips_output_dir = Path(self.config.temp_dir) / "clips"
             clips_output_dir.mkdir(parents=True, exist_ok=True)
 
-            clip_ids = []
             render_start = perf_counter()
+            semaphore = asyncio.Semaphore(self.config.parallel_clip_renders)
 
-            for i, segment in enumerate(segments_to_render):
-                # Check cancellation
-                if should_cancel and await should_cancel():
-                    raise Exception("Task cancelled")
-
-                # Update progress: 70-95% spread across clips
-                clip_progress = 70 + int(
-                    ((i + 1) / total_clips) * 25
-                ) if total_clips > 0 else 95
-                await update_progress(
-                    clip_progress,
-                    f"Creating clip {i + 1}/{total_clips}...",
-                )
-
-                # Render single clip in thread pool
-                clip_info = await self.video_service.create_single_clip(
-                    video_path,
-                    segment,
-                    i,
-                    clips_output_dir,
-                    font_family,
-                    font_size,
-                    font_color,
-                    caption_template,
-                    output_format,
-                    add_subtitles,
-                    highlight_color,
-                    background_color,
-                )
-                if clip_info is None:
-                    continue  # Skip failed clip
-
-                # Save to DB immediately
-                clip_id = await self.clip_repo.create_clip(
-                    self.db,
-                    task_id=task_id,
-                    filename=clip_info["filename"],
-                    file_path=clip_info["path"],
-                    start_time=clip_info["start_time"],
-                    end_time=clip_info["end_time"],
-                    duration=clip_info["duration"],
-                    text=clip_info.get("text", ""),
-                    relevance_score=clip_info.get("relevance_score", 0.0),
-                    reasoning=clip_info.get("reasoning", ""),
-                    clip_order=i + 1,
-                    virality_score=clip_info.get("virality_score", 0),
-                    hook_score=clip_info.get("hook_score", 0),
-                    engagement_score=clip_info.get("engagement_score", 0),
-                    value_score=clip_info.get("value_score", 0),
-                    shareability_score=clip_info.get("shareability_score", 0),
-                    hook_type=clip_info.get("hook_type"),
-                )
-                await self.db.commit()
-                clip_ids.append(clip_id)
-
-                # Update task's clip IDs array
-                await self.task_repo.update_task_clips(self.db, task_id, clip_ids)
-
-                # Notify frontend via SSE
-                if clip_ready_callback:
-                    clip_record = await self.clip_repo.get_clip_by_id(
-                        self.db, clip_id
+            async def render_one(
+                index: int, segment: Dict[str, Any]
+            ) -> tuple[int, Optional[Dict[str, Any]], bool]:
+                async with semaphore:
+                    if should_cancel and await should_cancel():
+                        return index, None, True
+                    clip_info = await self.video_service.create_single_clip(
+                        video_path,
+                        segment,
+                        index,
+                        clips_output_dir,
+                        font_family,
+                        font_size,
+                        font_color,
+                        caption_template,
+                        output_format,
+                        add_subtitles,
+                        highlight_color,
+                        background_color,
+                        processing_mode,
                     )
-                    if clip_record:
-                        await clip_ready_callback(i, total_clips, clip_record)
+                    return index, clip_info, False
+
+            render_tasks = [
+                asyncio.create_task(render_one(i, segment))
+                for i, segment in enumerate(segments_to_render)
+            ]
+
+            clip_id_by_index: Dict[int, str] = {}
+            clips_done = 0
+            try:
+                for future in asyncio.as_completed(render_tasks):
+                    index, clip_info, was_cancelled = await future
+                    if was_cancelled:
+                        raise Exception("Task cancelled")
+
+                    clips_done += 1
+                    clip_progress = (
+                        70 + int((clips_done / total_clips) * 25)
+                        if total_clips > 0
+                        else 95
+                    )
+                    await update_progress(
+                        clip_progress,
+                        f"Created clip {clips_done}/{total_clips}...",
+                    )
+
+                    if clip_info is None:
+                        continue  # Skip failed clip
+
+                    # Save to DB immediately
+                    clip_id = await self.clip_repo.create_clip(
+                        self.db,
+                        task_id=task_id,
+                        filename=clip_info["filename"],
+                        file_path=clip_info["path"],
+                        start_time=clip_info["start_time"],
+                        end_time=clip_info["end_time"],
+                        duration=clip_info["duration"],
+                        text=clip_info.get("text", ""),
+                        relevance_score=clip_info.get("relevance_score", 0.0),
+                        reasoning=clip_info.get("reasoning", ""),
+                        clip_order=index + 1,
+                        virality_score=clip_info.get("virality_score", 0),
+                        hook_score=clip_info.get("hook_score", 0),
+                        engagement_score=clip_info.get("engagement_score", 0),
+                        value_score=clip_info.get("value_score", 0),
+                        shareability_score=clip_info.get("shareability_score", 0),
+                        hook_type=clip_info.get("hook_type"),
+                    )
+                    await self.db.commit()
+                    clip_id_by_index[index] = clip_id
+
+                    # Keep the task's clip IDs in segment order
+                    ordered_ids = [
+                        clip_id_by_index[i]
+                        for i in sorted(clip_id_by_index)
+                    ]
+                    await self.task_repo.update_task_clips(
+                        self.db, task_id, ordered_ids
+                    )
+
+                    # Notify frontend via SSE
+                    if clip_ready_callback:
+                        clip_record = await self.clip_repo.get_clip_by_id(
+                            self.db, clip_id
+                        )
+                        if clip_record:
+                            await clip_ready_callback(
+                                index, total_clips, clip_record
+                            )
+            except BaseException:
+                for task in render_tasks:
+                    task.cancel()
+                raise
+
+            clip_ids = [clip_id_by_index[i] for i in sorted(clip_id_by_index)]
 
             stage_timings["render_seconds"] = round(
                 perf_counter() - render_start, 3
@@ -366,10 +449,6 @@ class TaskService:
                 completed_at=datetime.utcnow(),
                 stage_timings_json=json.dumps(stage_timings),
                 error_code="",
-            )
-            await self._send_completion_notification_if_needed(
-                task_id=task_id,
-                clips_count=len(clip_ids),
             )
 
             logger.info(
@@ -426,64 +505,6 @@ class TaskService:
                 error_code=error_code,
             )
             raise
-
-    async def _send_completion_notification_if_needed(
-        self, *, task_id: str, clips_count: int
-    ) -> None:
-        context = await self.task_repo.get_task_notification_context(self.db, task_id)
-        if not context:
-            logger.warning("Task %s missing notification context; skipping email", task_id)
-            return
-
-        if not context.get("notify_on_completion"):
-            return
-
-        if context.get("completion_notification_sent_at"):
-            logger.info(
-                "Completion notification already sent for task %s; skipping", task_id
-            )
-            return
-
-        user_email = context.get("user_email")
-        if not user_email:
-            logger.warning(
-                "Task %s has notify_on_completion enabled but user email is missing",
-                task_id,
-            )
-            return
-
-        email_service = TaskCompletionEmailService(self.config)
-        if not email_service.is_configured:
-            logger.warning(
-                "Skipping completion notification for task %s because Resend is not configured",
-                task_id,
-            )
-            return
-
-        try:
-            await email_service.send_task_completed_email(
-                recipient=TaskCompletionRecipient(
-                    email=user_email,
-                    name=context.get("user_name"),
-                    first_name=context.get("user_first_name"),
-                ),
-                task_id=task_id,
-                source_title=context.get("source_title"),
-                clips_count=clips_count,
-            )
-            stamped = await self.task_repo.mark_completion_notification_sent(
-                self.db, task_id
-            )
-            if not stamped:
-                logger.info(
-                    "Completion notification stamp already existed for task %s",
-                    task_id,
-                )
-        except Exception:
-            logger.exception(
-                "Failed to send completion notification for task %s",
-                task_id,
-            )
 
     async def get_task_with_clips(self, task_id: str) -> Optional[Dict[str, Any]]:
         """Get task details with all clips."""
@@ -548,10 +569,9 @@ class TaskService:
 
     async def delete_task(self, task_id: str) -> None:
         """Delete a task and all its associated clips."""
-        # Delete all clips for this task
+        clips = await self.clip_repo.get_clips_by_task(self.db, task_id)
+        delete_clip_files(clips)
         await self.clip_repo.delete_clips_by_task(self.db, task_id)
-
-        # Delete the task
         await self.task_repo.delete_task(self.db, task_id)
 
         logger.info(f"Deleted task {task_id} and all associated clips")
@@ -605,24 +625,15 @@ class TaskService:
         add_subtitles = True
 
         # Preserve original output_format and add_subtitles from task creation (stored in Redis)
-        redis_client = redis.Redis(
-            host=self.config.redis_host,
-            port=self.config.redis_port,
-            password=self.config.redis_password,
-            decode_responses=True,
-        )
-        try:
-            source_payload = await redis_client.get(f"task_source:{task_id}")
-            if source_payload:
-                parsed = json.loads(source_payload)
-                of = parsed.get("output_format", output_format)
-                if of in ("vertical", "original"):
-                    output_format = of
-                asub = parsed.get("add_subtitles", add_subtitles)
-                if isinstance(asub, bool):
-                    add_subtitles = asub
-        finally:
-            await redis_client.close()
+        source_payload = await get_redis().get(f"task_source:{task_id}")
+        if source_payload:
+            parsed = json.loads(source_payload)
+            of = parsed.get("output_format", output_format)
+            if of in ("vertical", "original"):
+                output_format = of
+            asub = parsed.get("add_subtitles", add_subtitles)
+            if isinstance(asub, bool):
+                add_subtitles = asub
 
         if not source_url or not source_type:
             raise ValueError("Task source URL is missing; cannot regenerate clips")
@@ -671,6 +682,8 @@ class TaskService:
             add_subtitles,
         )
 
+        existing = await self.clip_repo.get_clips_by_task(self.db, task_id)
+        delete_clip_files(existing)
         await self.clip_repo.delete_clips_by_task(self.db, task_id)
 
         clip_ids = []
@@ -714,8 +727,12 @@ class TaskService:
         if not input_path.exists():
             raise ValueError("Clip file not found")
 
-        output_path = trim_clip_file(
-            input_path, Path(self.config.temp_dir) / "clips", start_offset, end_offset
+        output_path = await run_in_thread(
+            trim_clip_file,
+            input_path,
+            Path(self.config.temp_dir) / "clips",
+            start_offset,
+            end_offset,
         )
         clip_duration = max(0.1, clip["duration"] - start_offset - end_offset)
 
@@ -737,6 +754,134 @@ class TaskService:
         )
         return (await self.clip_repo.get_clip_by_id(self.db, clip_id)) or {}
 
+    async def re_render_clip(
+        self,
+        task_id: str,
+        clip_id: str,
+        start_delta_seconds: float,
+        end_delta_seconds: float,
+        font_family: str,
+        font_size: int,
+        font_color: str,
+        caption_template: str,
+        highlight_color: str = "#8B5CF6",
+        background_color: str = "#1A1A1ACC",
+    ) -> Dict[str, Any]:
+        """Fork a new clip from source with adjusted boundaries and style."""
+        from ..ai import score_segment_virality
+
+        clip = await self.clip_repo.get_clip_by_id(self.db, clip_id)
+        if not clip or clip["task_id"] != task_id:
+            raise ValueError("Clip not found")
+
+        task = await self.task_repo.get_task_by_id(self.db, task_id)
+        if not task:
+            raise ValueError("Task not found")
+
+        _, video_path = await self._resolve_task_transcript_and_video(task)
+        video_duration = VideoService._get_file_duration(video_path)
+        if not video_duration or video_duration <= 0:
+            raise ValueError("Could not determine source video duration")
+
+        start_seconds, end_seconds = compute_re_render_bounds(
+            parse_timestamp_to_seconds(clip["start_time"]),
+            parse_timestamp_to_seconds(clip["end_time"]),
+            start_delta_seconds,
+            end_delta_seconds,
+            video_duration,
+        )
+
+        new_start = self._seconds_to_mmss(start_seconds)
+        new_end = self._seconds_to_mmss(end_seconds)
+
+        transcript_text = clip.get("text") or ""
+        cached = load_cached_transcript_data(video_path)
+        if cached:
+            words = get_words_in_range(cached, start_seconds, end_seconds)
+            if words:
+                transcript_text = " ".join(
+                    str(word.get("text") or "").strip() for word in words
+                ).strip()
+
+        rescore = await score_segment_virality(transcript_text)
+        virality = rescore.virality
+        reasoning = (
+            f"Edited from clip {clip_id}. "
+            f"{virality.virality_reasoning or 'Re-scored after edit.'}"
+        )
+
+        segment_dict = {
+            "start_time": new_start,
+            "end_time": new_end,
+            "text": transcript_text,
+            "relevance_score": clip.get("relevance_score", 0.0),
+            "reasoning": reasoning,
+            "virality_score": virality.total_score,
+            "hook_score": virality.hook_score,
+            "engagement_score": virality.engagement_score,
+            "value_score": virality.value_score,
+            "shareability_score": virality.shareability_score,
+            "hook_type": virality.hook_type,
+        }
+
+        clips_output_dir = Path(self.config.temp_dir) / "clips"
+        clips_output_dir.mkdir(parents=True, exist_ok=True)
+        existing_clips = await self.clip_repo.get_clips_by_task(self.db, task_id)
+        clip_order = (
+            max((item.get("clip_order", 0) for item in existing_clips), default=0) + 1
+        )
+        clip_index = max(clip_order - 1, 0)
+
+        clip_info = await self.video_service.create_single_clip(
+            video_path,
+            segment_dict,
+            clip_index,
+            clips_output_dir,
+            font_family,
+            font_size,
+            font_color,
+            caption_template,
+            "vertical",
+            True,
+            highlight_color=highlight_color,
+            background_color=background_color,
+        )
+        if clip_info is None:
+            raise ValueError("Failed to re-render clip")
+
+        new_clip_id = await self.clip_repo.create_clip(
+            self.db,
+            task_id=task_id,
+            filename=clip_info["filename"],
+            file_path=clip_info["path"],
+            start_time=clip_info["start_time"],
+            end_time=clip_info["end_time"],
+            duration=clip_info["duration"],
+            text=transcript_text,
+            relevance_score=clip.get("relevance_score", 0.0),
+            reasoning=reasoning,
+            clip_order=clip_order,
+            virality_score=virality.total_score,
+            hook_score=virality.hook_score,
+            engagement_score=virality.engagement_score,
+            value_score=virality.value_score,
+            shareability_score=virality.shareability_score,
+            hook_type=virality.hook_type,
+        )
+        await self.db.commit()
+
+        existing_ids = list(task.get("generated_clips_ids") or [])
+        if not existing_ids and existing_clips:
+            existing_ids = [item["id"] for item in existing_clips]
+        if new_clip_id not in existing_ids:
+            existing_ids.append(new_clip_id)
+        await self.task_repo.update_task_clips(self.db, task_id, existing_ids)
+
+        new_clip = (await self.clip_repo.get_clip_by_id(self.db, new_clip_id)) or {}
+        new_clip["parent_clip_id"] = clip_id
+        new_clip["forked"] = True
+        return new_clip
+
     async def split_clip(
         self, task_id: str, clip_id: str, split_time: float
     ) -> Dict[str, Any]:
@@ -748,8 +893,11 @@ class TaskService:
         if not input_path.exists():
             raise ValueError("Clip file not found")
 
-        first_path, second_path = split_clip_file(
-            input_path, Path(self.config.temp_dir) / "clips", split_time
+        first_path, second_path = await run_in_thread(
+            split_clip_file,
+            input_path,
+            Path(self.config.temp_dir) / "clips",
+            split_time,
         )
 
         start_seconds = parse_timestamp_to_seconds(clip["start_time"])
@@ -803,7 +951,8 @@ class TaskService:
             clips.append(clip)
 
         ordered = sorted(clips, key=lambda c: c.get("clip_order", 0))
-        merged_path = merge_clip_files(
+        merged_path = await run_in_thread(
+            merge_clip_files,
             [Path(c["file_path"]) for c in ordered],
             Path(self.config.temp_dir) / "clips",
         )
@@ -847,7 +996,8 @@ class TaskService:
         if not input_path.exists():
             raise ValueError("Clip file not found")
 
-        output_path = overlay_custom_captions(
+        output_path = await run_in_thread(
+            overlay_custom_captions,
             input_path,
             Path(self.config.temp_dir) / "clips",
             caption_text,

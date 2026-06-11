@@ -2,6 +2,7 @@
 AI-related functions for transcript analysis with enhanced precision and virality scoring.
 """
 
+from contextvars import ContextVar
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, Callable, Awaitable
 import asyncio
@@ -23,6 +24,28 @@ from .timestamp_parse import (
 
 logger = logging.getLogger(__name__)
 config = Config()
+
+# Per-task model override (set by the worker before running analysis).
+_model_override: ContextVar[Optional[str]] = ContextVar("llm_model_override", default=None)
+
+VALID_MODEL_PATTERN = re.compile(r"^[a-z0-9_-]+:[A-Za-z0-9._:\/-]+$")
+
+
+def set_model_override(model: Optional[str]) -> None:
+    """Set (or clear) the per-task LLM model override for the current context.
+
+    Invalid model strings are ignored with a warning so a bad selection can
+    never break the pipeline — it just falls back to the configured default.
+    """
+    if model and not VALID_MODEL_PATTERN.match(model):
+        logger.warning("Ignoring invalid model override %r; using default %s", model, config.llm)
+        model = None
+    _model_override.set(model)
+
+
+def effective_llm() -> str:
+    """Return the model to use: per-task override if set, else the configured default."""
+    return _model_override.get() or config.llm
 
 
 class ViralityAnalysis(BaseModel):
@@ -239,8 +262,8 @@ OLLAMA_JSON_RESPONSE_SUFFIX = (
     "Start your response with { and end with }."
 )
 
-# Lazy-loaded agent to avoid import-time failures when API keys aren't set
-_transcript_agent: Optional[Agent[None, TranscriptAnalysis]] = None
+# Lazy-loaded agents (per model) to avoid import-time failures when API keys aren't set
+_transcript_agents: Dict[str, Agent[None, TranscriptAnalysis]] = {}
 
 
 def _get_missing_llm_key_error(model_name: str) -> Optional[str]:
@@ -274,35 +297,38 @@ def _get_missing_llm_key_error(model_name: str) -> Optional[str]:
 
 
 def get_transcript_agent() -> Agent[None, TranscriptAnalysis]:
-    """Get or create the transcript analysis agent (lazy initialization)."""
-    global _transcript_agent
-    if _transcript_agent is None:
-        model_name = config.llm
-        config_error = _get_missing_llm_key_error(model_name)
-        if config_error:
-            raise RuntimeError(config_error)
+    """Get or create the transcript analysis agent for the active model."""
+    model_name = effective_llm()
+    cached = _transcript_agents.get(model_name)
+    if cached is not None:
+        return cached
 
-        model: Any
-        if model_name.startswith("ollama:"):
-            from pydantic_ai.models.openai import OpenAIModel
-            from pydantic_ai.providers.openai import OpenAIProvider
-            actual_model = model_name.removeprefix("ollama:")
-            base_url = config.ollama_base_url or "http://localhost:11434/v1"
-            
-            # Use OpenAI-compatible bridge for Ollama
-            provider = OpenAIProvider(base_url=base_url)
-            model = OpenAIModel(model_name=actual_model, provider=provider)
-            logger.info(f"Using local Ollama model: {actual_model} at {base_url}")
-        else:
-            model = model_name
+    config_error = _get_missing_llm_key_error(model_name)
+    if config_error:
+        raise RuntimeError(config_error)
 
-        _transcript_agent = Agent[None, TranscriptAnalysis](
-            model=model,
-            result_type=TranscriptAnalysis,
-            system_prompt=transcript_analysis_system_prompt,
-            result_retries=5,
-        )
-    return _transcript_agent
+    model: Any
+    if model_name.startswith("ollama:"):
+        from pydantic_ai.models.openai import OpenAIModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+        actual_model = model_name.removeprefix("ollama:")
+        base_url = config.ollama_base_url or "http://localhost:11434/v1"
+
+        # Use OpenAI-compatible bridge for Ollama
+        provider = OpenAIProvider(base_url=base_url)
+        model = OpenAIModel(model_name=actual_model, provider=provider)
+        logger.info(f"Using local Ollama model: {actual_model} at {base_url}")
+    else:
+        model = model_name
+
+    agent = Agent[None, TranscriptAnalysis](
+        model=model,
+        result_type=TranscriptAnalysis,
+        system_prompt=transcript_analysis_system_prompt,
+        result_retries=5,
+    )
+    _transcript_agents[model_name] = agent
+    return agent
 
 
 def build_transcript_analysis_prompt(
@@ -584,7 +610,7 @@ async def _ollama_raw_json_call(transcript: str) -> Optional[TranscriptAnalysis]
     import httpx
 
     base_url = (config.ollama_base_url or "http://localhost:11434/v1").rstrip("/v1").rstrip("/")
-    model_name = config.llm.removeprefix("ollama:")
+    model_name = effective_llm().removeprefix("ollama:")
 
     prompt = build_transcript_analysis_prompt(
         transcript=transcript, json_only=True
@@ -841,7 +867,7 @@ async def _ollama_json_request(
     import httpx
 
     base_url = (config.ollama_base_url or "http://localhost:11434/v1").rstrip("/v1").rstrip("/")
-    model_name = config.llm.removeprefix("ollama:")
+    model_name = effective_llm().removeprefix("ollama:")
     predict_tokens = num_predict or config.ollama_num_predict
 
     try:
@@ -1189,7 +1215,7 @@ async def get_most_relevant_parts_by_transcript(
     analysis: Optional[TranscriptAnalysis] = None
     use_map_reduce = len(transcript) > 8000 or processing_mode in ("balanced", "quality")
 
-    if use_map_reduce and config.llm.startswith("ollama:"):
+    if use_map_reduce and effective_llm().startswith("ollama:"):
         logger.info(
             f"Using map-reduce analysis (mode={processing_mode}, chars={len(transcript)})"
         )
@@ -1199,7 +1225,7 @@ async def get_most_relevant_parts_by_transcript(
             progress_callback=progress_callback,
         )
 
-    if config.llm.startswith("ollama:"):
+    if effective_llm().startswith("ollama:"):
         analysis = await _ollama_raw_json_call(transcript)
         if analysis is None:
             raise RuntimeError(
@@ -1442,10 +1468,10 @@ async def find_segment_by_user_query(
     )
 
     raw: Optional[dict] = None
-    if config.llm.startswith("ollama:"):
+    if effective_llm().startswith("ollama:"):
         raw = await _ollama_json_request(system, prompt, num_predict=4096)
     else:
-        model_name = config.llm
+        model_name = effective_llm()
         config_error = _get_missing_llm_key_error(model_name)
         if config_error:
             raise RuntimeError(config_error)
@@ -1473,4 +1499,93 @@ async def find_segment_by_user_query(
             "Could not locate a matching moment in the transcript. Try rephrasing your description."
         )
     return parsed
+
+
+class SegmentRescoreResult(BaseModel):
+    """Virality re-score + posting title for a single clip."""
+
+    virality: ViralityAnalysis
+    post_title: str = ""
+
+
+def _normalize_post_title(title: str, fallback_text: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(title or "").strip())
+    if cleaned:
+        return cleaned[:60]
+    words = re.sub(r"\s+", " ", str(fallback_text or "").strip()).split()
+    if not words:
+        return "Untitled clip"
+    return " ".join(words[:8])[:60]
+
+
+_segment_rescore_agent: Optional[Agent[None, SegmentRescoreResult]] = None
+
+
+def _get_segment_rescore_agent() -> Agent[None, SegmentRescoreResult]:
+    global _segment_rescore_agent
+    if _segment_rescore_agent is None:
+        model_name = effective_llm()
+        config_error = _get_missing_llm_key_error(model_name)
+        if config_error:
+            raise RuntimeError(config_error)
+        _segment_rescore_agent = Agent(
+            model_name,
+            output_type=SegmentRescoreResult,
+            system_prompt=(
+                "Score a single short-form video clip transcript for viral potential. "
+                "Return virality subscores (0-25 each) and a catchy post_title (max 60 chars) "
+                "the creator can use when posting. Stay grounded in the transcript."
+            ),
+        )
+    return _segment_rescore_agent
+
+
+async def score_segment_virality(text: str) -> SegmentRescoreResult:
+    """Score one transcript slice and suggest a posting title."""
+    excerpt = str(text or "").strip()
+    if not excerpt:
+        return SegmentRescoreResult(
+            virality=_build_default_virality(),
+            post_title="Untitled clip",
+        )
+
+    try:
+        if effective_llm().startswith("ollama:"):
+            system = (
+                "Score this clip transcript. Return JSON with keys: "
+                "post_title (string, max 60 chars), virality (object with hook_score, "
+                "engagement_score, value_score, shareability_score, total_score, hook_type, "
+                "virality_reasoning)."
+            )
+            raw = await _ollama_json_request(system, excerpt[:2000], num_predict=1024)
+            if raw:
+                virality_raw = (
+                    raw.get("virality") if isinstance(raw.get("virality"), dict) else {}
+                )
+                try:
+                    virality = (
+                        ViralityAnalysis(**virality_raw)
+                        if virality_raw
+                        else _build_default_virality()
+                    )
+                except Exception:
+                    virality = _build_default_virality()
+                return SegmentRescoreResult(
+                    virality=virality,
+                    post_title=_normalize_post_title(
+                        str(raw.get("post_title") or ""), excerpt
+                    ),
+                )
+        agent = _get_segment_rescore_agent()
+        result = await agent.run(excerpt[:2000])
+        payload = result.output
+        payload.post_title = _normalize_post_title(payload.post_title, excerpt)
+        return payload
+    except Exception as exc:
+        logger.warning("Segment re-score failed, using fallback: %s", exc)
+
+    return SegmentRescoreResult(
+        virality=_build_default_virality(),
+        post_title=_normalize_post_title("", excerpt),
+    )
 

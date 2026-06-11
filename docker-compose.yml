@@ -7,10 +7,6 @@ services:
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
         - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-        - NEXT_PUBLIC_SELF_HOST=${SELF_HOST:-true}
-        - NEXT_PUBLIC_PRO_PRICE_MONTHLY=${NEXT_PUBLIC_PRO_PRICE_MONTHLY:-9.99}
-        - NEXT_PUBLIC_FREE_PLAN_TASK_LIMIT=${NEXT_PUBLIC_FREE_PLAN_TASK_LIMIT:-10}
-        - NEXT_PUBLIC_PRO_PLAN_TASK_LIMIT=${NEXT_PUBLIC_PRO_PLAN_TASK_LIMIT:-200}
     container_name: supoclip-frontend
     ports:
       - "3000:3000"
@@ -23,22 +19,14 @@ services:
       - NEXT_TELEMETRY_DISABLED=1
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
       - BACKEND_INTERNAL_URL=http://backend:8000
-      - NEXT_PUBLIC_SELF_HOST=${SELF_HOST:-true}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_LANDING_ONLY_MODE=${NEXT_PUBLIC_LANDING_ONLY_MODE:-false}
+      - LOCAL_SINGLE_USER=${LOCAL_SINGLE_USER:-true}
+      - NEXT_PUBLIC_LOCAL_SINGLE_USER=${NEXT_PUBLIC_LOCAL_SINGLE_USER:-true}
       - BACKEND_AUTH_SECRET=${BACKEND_AUTH_SECRET}
       - DATABASE_URL=postgresql://supoclip:supoclip_password@postgres:5432/supoclip
       - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-supoclip_dev_secret_change_in_production}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
-      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
-      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
-      - NEXT_PUBLIC_PRO_PRICE_MONTHLY=${NEXT_PUBLIC_PRO_PRICE_MONTHLY:-9.99}
-      - NEXT_PUBLIC_FREE_PLAN_TASK_LIMIT=${NEXT_PUBLIC_FREE_PLAN_TASK_LIMIT:-10}
-      - NEXT_PUBLIC_PRO_PLAN_TASK_LIMIT=${NEXT_PUBLIC_PRO_PLAN_TASK_LIMIT:-200}
-      - STRIPE_CHECKOUT_URL=${STRIPE_CHECKOUT_URL}
-      - STRIPE_CUSTOMER_PORTAL_URL=${STRIPE_CUSTOMER_PORTAL_URL}
-      - RESEND_API_KEY=${RESEND_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,11 +51,13 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/src:/app/src
+      - ./backend/migrations:/app/migrations
       - uploads:/app/uploads
-      - clips:/app/clips
       - ./backend/fonts:/app/fonts
       - ./backend/transitions:/app/transitions
-    environment:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment: &backend-env
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql+asyncpg://supoclip:supoclip_password@postgres:5432/supoclip
@@ -80,11 +70,11 @@ services:
       - APIFY_YOUTUBE_DEFAULT_QUALITY=${APIFY_YOUTUBE_DEFAULT_QUALITY:-1080}
       - YOUTUBE_DATA_API_KEY=${YOUTUBE_DATA_API_KEY}
       - YOUTUBE_METADATA_PROVIDER=${YOUTUBE_METADATA_PROVIDER:-yt_dlp}
-      - LLM=${LLM:-google-gla:gemini-3-flash-preview}
+      - LLM=${LLM:-ollama:llama3.2:3b}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
       - OLLAMA_API_KEY=${OLLAMA_API_KEY}
       - QUEUED_TASK_TIMEOUT_SECONDS=${QUEUED_TASK_TIMEOUT_SECONDS:-180}
       - PROCESSING_TASK_TIMEOUT_SECONDS=${PROCESSING_TASK_TIMEOUT_SECONDS:-14400}
@@ -98,14 +88,11 @@ services:
       - FAST_MODE_TRANSCRIPT_MODEL=${FAST_MODE_TRANSCRIPT_MODEL:-nano}
       - LOCAL_LLM_CONCURRENCY=${LOCAL_LLM_CONCURRENCY:-1}
       - TRANSCRIPT_WINDOW_SECONDS=${TRANSCRIPT_WINDOW_SECONDS:-300}
-      - SELF_HOST=${SELF_HOST:-true}
+      - PARALLEL_CLIP_RENDERS=${PARALLEL_CLIP_RENDERS:-2}
       - BACKEND_AUTH_SECRET=${BACKEND_AUTH_SECRET}
       - AUTH_SIGNATURE_TTL_SECONDS=${AUTH_SIGNATURE_TTL_SECONDS:-300}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://sp.localhost:3000}
-      - FREE_PLAN_TASK_LIMIT=${FREE_PLAN_TASK_LIMIT:-10}
-      - PRO_PLAN_TASK_LIMIT=${PRO_PLAN_TASK_LIMIT:-0}
-      - RESEND_API_KEY=${RESEND_API_KEY}
-      - "RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-SupoClip <onboarding@resend.dev>}"
+      - DISCORD_FEEDBACK_WEBHOOK_URL=${DISCORD_FEEDBACK_WEBHOOK_URL}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
     restart: unless-stopped
     depends_on:
@@ -130,58 +117,25 @@ services:
     command: [".venv/bin/arq", "src.workers.tasks.WorkerSettings"]
     volumes:
       - ./backend/src:/app/src
+      - ./backend/migrations:/app/migrations
       - uploads:/app/uploads
-      - clips:/app/clips
       - ./backend/fonts:/app/fonts
       - ./backend/transitions:/app/transitions
-    environment:
-      - PYTHONPATH=/app
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+asyncpg://supoclip:supoclip_password@postgres:5432/supoclip
-      - TEMP_DIR=/app/uploads
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - ASSEMBLY_AI_API_KEY=${ASSEMBLY_AI_API_KEY}
-      - APIFY_API_TOKEN=${APIFY_API_TOKEN}
-      - APIFY_YOUTUBE_DEFAULT_QUALITY=${APIFY_YOUTUBE_DEFAULT_QUALITY:-1080}
-      - YOUTUBE_DATA_API_KEY=${YOUTUBE_DATA_API_KEY}
-      - YOUTUBE_METADATA_PROVIDER=${YOUTUBE_METADATA_PROVIDER:-yt_dlp}
-      - LLM=${LLM:-google-gla:gemini-3-flash-preview}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY}
-      - QUEUED_TASK_TIMEOUT_SECONDS=${QUEUED_TASK_TIMEOUT_SECONDS:-180}
-      - PROCESSING_TASK_TIMEOUT_SECONDS=${PROCESSING_TASK_TIMEOUT_SECONDS:-14400}
-      - WORKER_MAX_JOBS=${WORKER_MAX_JOBS:-1}
-      - WORKER_JOB_TIMEOUT_SECONDS=${WORKER_JOB_TIMEOUT_SECONDS:-21600}
-      - DEFAULT_PROCESSING_MODE=${DEFAULT_PROCESSING_MODE:-quality}
-      - DEFAULT_CAPTION_TEMPLATE=${DEFAULT_CAPTION_TEMPLATE:-riverside}
-      - FAST_MODE_MAX_CLIPS=${FAST_MODE_MAX_CLIPS:-4}
-      - BALANCED_MODE_MAX_CLIPS=${BALANCED_MODE_MAX_CLIPS:-7}
-      - QUALITY_MODE_MAX_CLIPS=${QUALITY_MODE_MAX_CLIPS:-14}
-      - FAST_MODE_TRANSCRIPT_MODEL=${FAST_MODE_TRANSCRIPT_MODEL:-nano}
-      - LOCAL_LLM_CONCURRENCY=${LOCAL_LLM_CONCURRENCY:-1}
-      - TRANSCRIPT_WINDOW_SECONDS=${TRANSCRIPT_WINDOW_SECONDS:-300}
-      - SELF_HOST=${SELF_HOST:-true}
-      - BACKEND_AUTH_SECRET=${BACKEND_AUTH_SECRET}
-      - AUTH_SIGNATURE_TTL_SECONDS=${AUTH_SIGNATURE_TTL_SECONDS:-300}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://sp.localhost:3000}
-      - FREE_PLAN_TASK_LIMIT=${FREE_PLAN_TASK_LIMIT:-10}
-      - PRO_PLAN_TASK_LIMIT=${PRO_PLAN_TASK_LIMIT:-0}
-      - RESEND_API_KEY=${RESEND_API_KEY}
-      - "RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL:-SupoClip <onboarding@resend.dev>}"
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment: *backend-env
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      backend:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD", ".venv/bin/arq", "--check", "src.workers.tasks.WorkerSettings"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
 
   # Redis for caching and job queues (useful for video processing)
   redis:
@@ -230,8 +184,6 @@ services:
 
 volumes:
   uploads:
-    driver: local
-  clips:
     driver: local
   redis_data:
     driver: local

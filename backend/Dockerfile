@@ -30,8 +30,9 @@ RUN uv venv .venv && uv sync
 RUN uv pip install --upgrade --force-reinstall yt-dlp
 RUN uv pip install --upgrade --force-reinstall "yt-dlp[default]"
 
-# Copy source code
+# Copy source code and database migrations
 COPY src/ ./src/
+COPY migrations/ ./migrations/
 
 # Copy fonts and transitions directories
 COPY fonts/ ./fonts/

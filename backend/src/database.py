@@ -107,7 +107,8 @@ async def init_db():
             )
         )
 
-        migrations_dir = Path(__file__).parent / "migrations" / "sql"
+        # backend/migrations/*.sql (repo) or /app/migrations (Docker)
+        migrations_dir = Path(__file__).resolve().parent.parent / "migrations"
         if migrations_dir.exists():
             files = sorted([p for p in migrations_dir.glob("*.sql") if p.is_file()])
             for migration_file in files:

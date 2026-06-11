@@ -12,13 +12,11 @@ dependencies = [
     "setuptools-rust>=1.11.1",
     "asyncpg>=0.29.0",
     "sqlalchemy>=2.0.25",
-    "alembic>=1.13.0",
     "python-dotenv>=1.0.0",
     "yt-dlp>=2025.7.21",
     "greenlet>=2.0.0",
     "moviepy>=2.2.1",
     "opencv-python>=4.8.0",
-    "srt-equalizer>=0.1.10",
     "assemblyai>=0.64.0",
     "srt>=3.5.3",
     "mediapipe>=0.10.0",
@@ -27,8 +25,9 @@ dependencies = [
     "sse-starlette>=1.6.5",
     "arq>=0.26.0",
     "redis>=5.0.0",
-    "resend>=2.13.0",
     "requests>=2.32.0",
+    "psutil>=5.9.0",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
@@ -48,7 +47,8 @@ asyncio_default_fixture_loop_scope = "session"
 testpaths = ["tests"]
 addopts = """
 --cov=src.auth_headers
---cov=src.services.billing_service
+--cov=src.api.deps
+--cov=src.api.routes.models
 --cov-report=term-missing
 --cov-report=html
 --cov-fail-under=65

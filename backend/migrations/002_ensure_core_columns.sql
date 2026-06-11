@@ -1,0 +1,39 @@
+-- Migration: Ensure all core columns exist (replaces runtime schema-fallback queries).
+-- Brings older databases up to the current init.sql baseline.
+
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS url VARCHAR(1000);
+
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS caption_template VARCHAR(50) DEFAULT 'default';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS processing_mode VARCHAR(20) NOT NULL DEFAULT 'fast';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS started_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cache_hit BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS error_code VARCHAR(80);
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS stage_timings_json TEXT;
+
+ALTER TABLE generated_clips ADD COLUMN IF NOT EXISTS virality_score INTEGER DEFAULT 0;
+ALTER TABLE generated_clips ADD COLUMN IF NOT EXISTS hook_score INTEGER DEFAULT 0;
+ALTER TABLE generated_clips ADD COLUMN IF NOT EXISTS engagement_score INTEGER DEFAULT 0;
+ALTER TABLE generated_clips ADD COLUMN IF NOT EXISTS value_score INTEGER DEFAULT 0;
+ALTER TABLE generated_clips ADD COLUMN IF NOT EXISTS shareability_score INTEGER DEFAULT 0;
+ALTER TABLE generated_clips ADD COLUMN IF NOT EXISTS hook_type VARCHAR(50);
+ALTER TABLE generated_clips ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_font_family VARCHAR(100) DEFAULT 'TikTokSans-Regular';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_font_size INTEGER DEFAULT 24;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_font_color VARCHAR(7) DEFAULT '#FFFFFF';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_caption_template VARCHAR(50) DEFAULT 'default';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_highlight_color VARCHAR(9) DEFAULT '#8B5CF6';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS default_pill_color VARCHAR(9) DEFAULT '#1A1A1ACC';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS processing_cache (
+    cache_key VARCHAR(255) PRIMARY KEY,
+    source_url TEXT NOT NULL,
+    source_type VARCHAR(20) NOT NULL,
+    video_path TEXT,
+    transcript_text TEXT,
+    analysis_json TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+)

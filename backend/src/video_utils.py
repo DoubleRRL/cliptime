@@ -75,6 +75,20 @@ class VideoProcessor:
                     "lanczos",
                 ],
             },
+            "balanced": {
+                "codec": "libx264",
+                "audio_codec": "aac",
+                "audio_bitrate": "192k",
+                "preset": "medium",
+                "ffmpeg_params": [
+                    "-crf",
+                    "20",
+                    "-pix_fmt",
+                    "yuv420p",
+                    "-movflags",
+                    "+faststart",
+                ],
+            },
             "medium": {
                 "codec": "libx264",
                 "audio_codec": "aac",
@@ -1752,6 +1766,16 @@ def create_fade_subtitles(
     return subtitle_clips
 
 
+def encoding_quality_for_mode(processing_mode: str) -> str:
+    """Map a task processing mode to an encoder quality preset."""
+    mode = (processing_mode or "quality").lower()
+    if mode == "fast":
+        return "medium"
+    if mode == "balanced":
+        return "balanced"
+    return "high"
+
+
 def create_optimized_clip(
     video_path: Path,
     start_time: float,
@@ -1765,6 +1789,7 @@ def create_optimized_clip(
     output_format: str = "vertical",
     highlight_color: Optional[str] = None,
     background_color: Optional[str] = None,
+    encode_quality: str = "high",
 ) -> bool:
     """Create clip with optional subtitles. output_format: 'vertical' (9:16) or 'original' (keep source size)."""
     try:
@@ -1932,7 +1957,7 @@ def create_optimized_clip(
         source_fps = clip.fps if clip.fps and clip.fps > 0 else 30
 
         processor = VideoProcessor(font_family, font_size, font_color)
-        encoding_settings = processor.get_optimal_encoding_settings("high")
+        encoding_settings = processor.get_optimal_encoding_settings(encode_quality)
 
         encode_target = output_path
         temp_nosubs_path: Optional[Path] = None
@@ -1942,7 +1967,8 @@ def create_optimized_clip(
 
         final_clip.write_videofile(
             str(encode_target),
-            temp_audiofile="temp-audio.m4a",
+            # Unique per-output temp audio path so parallel renders don't collide.
+            temp_audiofile=str(output_path.with_suffix(".tmp-audio.m4a")),
             remove_temp=True,
             logger=None,
             fps=source_fps,
@@ -2169,7 +2195,7 @@ def apply_transition_effect(
 
         final_clip.write_videofile(
             str(output_path),
-            temp_audiofile="temp-audio.m4a",
+            temp_audiofile=str(output_path.with_suffix(".tmp-audio.m4a")),
             remove_temp=True,
             logger=None,
             **encoding_settings,

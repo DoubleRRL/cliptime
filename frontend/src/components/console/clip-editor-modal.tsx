@@ -39,7 +39,6 @@ import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 
 type ClipEditorModalProps = {
-  apiUrl: string;
   taskId: string | null;
   clip: ConsoleClip | null;
   sessionSettings: ConsoleSessionSettings | null;
@@ -71,8 +70,13 @@ function mapApiClip(raw: Record<string, unknown>, previous?: ConsoleClip | null)
     endTime: String(raw.end_time || previous?.endTime || ""),
     durationSeconds: Number(raw.duration ?? previous?.durationSeconds ?? 0),
     viralityScore: Number(raw.virality_score ?? previous?.viralityScore ?? 0),
+    hookScore: Number(raw.hook_score ?? previous?.hookScore ?? 0),
+    engagementScore: Number(raw.engagement_score ?? previous?.engagementScore ?? 0),
+    valueScore: Number(raw.value_score ?? previous?.valueScore ?? 0),
+    shareabilityScore: Number(raw.shareability_score ?? previous?.shareabilityScore ?? 0),
+    clipOrder: Number(raw.clip_order ?? previous?.clipOrder ?? 0),
     filename: String(raw.filename || previous?.filename || ""),
-    videoUrl: String(raw.video_url || previous?.videoUrl || ""),
+    videoUrl: raw.video_url ? `/api${String(raw.video_url)}` : previous?.videoUrl || "",
     text: String(raw.text ?? previous?.text ?? ""),
     reasoning: String(raw.reasoning ?? previous?.reasoning ?? ""),
     hookType: raw.hook_type ? String(raw.hook_type) : previous?.hookType ?? null,
@@ -125,7 +129,6 @@ function ColorSwatches({
 }
 
 export function ClipEditorModal({
-  apiUrl,
   taskId,
   clip,
   sessionSettings,
@@ -164,7 +167,7 @@ export function ClipEditorModal({
     if (!open) return;
     const loadTemplates = async () => {
       try {
-        const response = await fetch(`${apiUrl.replace(/\/$/, "")}/caption-templates`);
+        const response = await fetch("/api/caption-templates");
         if (!response.ok) return;
         const data = await response.json();
         const options = (data.templates || data || []) as CaptionStyleTemplate[];
@@ -174,7 +177,7 @@ export function ClipEditorModal({
       }
     };
     void loadTemplates();
-  }, [apiUrl, open]);
+  }, [open]);
 
   const activeTemplate = useMemo(
     () => templates.find((template) => template.id === captionTemplate) ?? null,
@@ -187,7 +190,7 @@ export function ClipEditorModal({
   const previewEnd = clip ? formatTimestamp(parseTimestamp(clip.endTime) - endDelta) : "00:00";
   const displayTitle = clip ? getClipDisplayTitle(clip) : "";
 
-  const videoSrc = clip?.videoUrl ? `${apiUrl.replace(/\/$/, "")}${clip.videoUrl}` : null;
+  const videoSrc = clip?.videoUrl || null;
 
   const clipDuration = clip ? clipDurationFromTimes(clip.startTime, clip.endTime) : 0;
 
@@ -244,8 +247,10 @@ export function ClipEditorModal({
     }
   };
 
+  const dialogOpen = open && Boolean(clip && taskId);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={dialogOpen} onOpenChange={onOpenChange}>
       <DialogContent className="console-theme max-h-[90vh] overflow-y-auto border-[var(--console-border)] bg-[var(--console-beige)] text-[var(--console-text)] sm:max-w-3xl">
         {clip && taskId ? (
           <>

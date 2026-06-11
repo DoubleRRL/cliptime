@@ -59,6 +59,10 @@ def find_font_path(
     if not requested:
         return None
 
+    # Reject anything that could traverse outside the font directories.
+    if "/" in requested or "\\" in requested or ".." in requested:
+        return None
+
     search_dirs = [FONTS_DIR]
     if user_id:
         search_dirs.insert(0, get_user_fonts_dir(user_id))

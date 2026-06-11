@@ -39,31 +39,6 @@ class User(Base):
     last_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
-    # Billing fields
-    notify_on_completion: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=sql_text("'true'")
-    )
     is_admin: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=sql_text("'false'")
-    )
-    plan: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=sql_text("'free'")
-    )
-    subscription_status: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default=sql_text("'inactive'")
-    )
-    stripe_customer_id: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True, unique=True
-    )
-    stripe_subscription_id: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True, unique=True
-    )
-    billing_period_start: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    billing_period_end: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    trial_ends_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
     )

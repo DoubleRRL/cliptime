@@ -1,10 +1,12 @@
 "use client";
 
+import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
 import type { ConsoleClip } from "@/components/console/types";
 import { ClipVideoThumb } from "@/components/console/clip-video-thumb";
 import { DurationBadge, ScoreBadge } from "@/components/console/clip-thumb-badges";
 import { getClipDisplayTitle } from "@/lib/clip-display-title";
+import { pressable, springSnappy } from "@/lib/motion";
 
 type ClipCardProps = {
   clip: ConsoleClip;
@@ -28,14 +30,18 @@ export function ClipCard({
   const displayTitle = getClipDisplayTitle(clip);
 
   return (
-    <button
+    <motion.button
       type="button"
+      layout
       onClick={onClick}
       style={width ? { width } : undefined}
+      whileHover={{ y: -3, transition: springSnappy }}
+      whileTap={pressable.whileTap}
+      transition={springSnappy}
       className={cn(
-        "group flex min-w-0 max-w-full shrink-0 flex-col overflow-hidden rounded-2xl border p-2 text-left shadow-sm transition-all",
+        "group flex min-w-0 max-w-full shrink-0 flex-col overflow-hidden rounded-2xl border p-2 text-left shadow-sm",
         "border-[var(--console-clip-card-border)] bg-[var(--console-clip-card-bg)]",
-        "hover:border-[var(--console-clip-card-border-hover)] hover:shadow-md",
+        "hover:border-[var(--console-clip-card-border-hover)] hover:shadow-lg",
         isActive &&
           "border-[var(--console-terracotta)] shadow-[0_0_0_1px_var(--console-terracotta)]",
         className,
@@ -54,6 +60,6 @@ export function ClipCard({
           </p>
         </div>
       )}
-    </button>
+    </motion.button>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,6 +12,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Loader2, Upload } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { ModelSelector } from "@/components/model-selector";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 
 type NewSessionDialogProps = {
@@ -24,7 +26,19 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
   const [url, setUrl] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [llmModel, setLlmModel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Seed the selector with the user's saved default model.
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/preferences", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (data?.llmModel) setLlmModel(String(data.llmModel));
+      })
+      .catch(() => undefined);
+  }, [open]);
 
   const reset = () => {
     setUrl("");
@@ -49,6 +63,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
         processing_mode: process.env.NEXT_PUBLIC_DEFAULT_PROCESSING_MODE || "quality",
         output_format: "vertical",
         add_subtitles: true,
+        ...(llmModel ? { llm_model: llmModel } : {}),
       }),
     });
 
@@ -154,6 +169,11 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
             className="hidden"
             onChange={handleFileChange}
           />
+
+          <div className="space-y-1.5">
+            <Label className="text-xs text-[var(--console-text-muted)]">AI model</Label>
+            <ModelSelector value={llmModel} onChange={setLlmModel} disabled={isSubmitting} />
+          </div>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
         </div>

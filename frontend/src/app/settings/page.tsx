@@ -10,19 +10,21 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { signOut, useSession } from "@/lib/auth-client";
+import { signOut } from "@/lib/auth-client";
 import { track } from "@/lib/datafast";
+import { isLocalSingleUserMode } from "@/lib/app-flags";
+import { useEffectiveSession } from "@/hooks/use-effective-session";
 import Link from "next/link";
-import { Type, Palette, CheckCircle, AlertCircle, Settings, ArrowLeft, Mail } from "lucide-react";
+import { Type, Palette, CheckCircle, AlertCircle, Settings, ArrowLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ModelSelector } from "@/components/model-selector";
 
 interface UserPreferences {
   fontFamily: string;
   fontSize: number;
   fontColor: string;
   captionTemplate: string;
-  notifyOnCompletion: boolean;
+  llmModel: string | null;
 }
 
 interface CaptionTemplateOption {
@@ -30,34 +32,20 @@ interface CaptionTemplateOption {
   name: string;
 }
 
-interface BillingSummary {
-  monetization_enabled: boolean;
-  plan: string;
-  subscription_status: string;
-  usage_count: number;
-  usage_limit: number | null;
-  remaining: number | null;
-}
-
 export default function SettingsPage() {
   const [fontFamily, setFontFamily] = useState("TikTokSans-Regular");
   const [fontSize, setFontSize] = useState(24);
   const [fontColor, setFontColor] = useState("#FFFFFF");
   const [captionTemplate, setCaptionTemplate] = useState("default");
+  const [llmModel, setLlmModel] = useState<string | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<CaptionTemplateOption[]>([]);
-  const [completionEmails, setCompletionEmails] = useState(true);
   const [availableFonts, setAvailableFonts] = useState<Array<{ name: string, display_name: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetching, setIsFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
-  const [isBillingActionLoading, setIsBillingActionLoading] = useState(false);
-  const { data: session, isPending } = useSession();
-  const isAdmin = Boolean((session?.user as { is_admin?: boolean } | undefined)?.is_admin);
-
-  const proPriceMonthly = process.env.NEXT_PUBLIC_PRO_PRICE_MONTHLY || "9.99";
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  const { user, isPending } = useEffectiveSession();
+  const isAdmin = Boolean(user?.is_admin);
 
   // Load available fonts from backend and inject them into the page
   useEffect(() => {
@@ -104,7 +92,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const loadTemplates = async () => {
       try {
-        const response = await fetch(`${apiUrl}/caption-templates`);
+        const response = await fetch("/api/caption-templates");
         if (response.ok) {
           const data = await response.json();
           setAvailableTemplates(data.templates || []);
@@ -115,12 +103,12 @@ export default function SettingsPage() {
     };
 
     loadTemplates();
-  }, [apiUrl]);
+  }, []);
 
   // Load user preferences
   useEffect(() => {
     const loadPreferences = async () => {
-      if (!session?.user?.id) return;
+      if (!user?.id) return;
 
       setIsFetching(true);
       try {
@@ -131,7 +119,7 @@ export default function SettingsPage() {
           setFontSize(data.fontSize);
           setFontColor(data.fontColor);
           setCaptionTemplate(data.captionTemplate || "default");
-          setCompletionEmails(data.notifyOnCompletion ?? true);
+          setLlmModel(data.llmModel ?? null);
         }
       } catch (error) {
         console.error('Failed to load preferences:', error);
@@ -141,55 +129,7 @@ export default function SettingsPage() {
     };
 
     loadPreferences();
-  }, [session?.user?.id]);
-
-  useEffect(() => {
-    const fetchBillingSummary = async () => {
-      if (!session?.user?.id) return;
-
-      try {
-        const response = await fetch("/api/tasks/billing-summary", {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          return;
-        }
-
-        const data: BillingSummary = await response.json();
-        setBillingSummary(data);
-      } catch (fetchError) {
-        console.error("Failed to fetch billing summary:", fetchError);
-      }
-    };
-
-    fetchBillingSummary();
-  }, [session?.user?.id]);
-
-  const handleBillingAction = async () => {
-    if (!billingSummary?.monetization_enabled) return;
-
-    const route = billingSummary.plan === "pro" ? "/api/billing/portal" : "/api/billing/checkout";
-
-    try {
-      setIsBillingActionLoading(true);
-      const response = await fetch(route, { method: "POST" });
-      const data = await response.json();
-
-      if (!response.ok || !data.url) {
-        throw new Error(data.error || "Unable to open billing");
-      }
-
-      track(billingSummary.plan === "pro" ? "billing_portal_opened" : "billing_checkout_started", {
-        plan: billingSummary.plan,
-      });
-      window.location.href = data.url;
-    } catch (billingError) {
-      setError(billingError instanceof Error ? billingError.message : "Billing action failed");
-    } finally {
-      setIsBillingActionLoading(false);
-    }
-  };
+  }, [user?.id]);
 
   const handleSavePreferences = async () => {
     setIsLoading(true);
@@ -207,7 +147,7 @@ export default function SettingsPage() {
           fontSize,
           fontColor,
           captionTemplate,
-          notifyOnCompletion: completionEmails,
+          llmModel,
         }),
       });
 
@@ -244,7 +184,7 @@ export default function SettingsPage() {
     );
   }
 
-  if (!session?.user) {
+  if (!user) {
     return (
       <div className="min-h-screen bg-background">
         <div className="max-w-4xl mx-auto px-4 py-24">
@@ -286,18 +226,20 @@ export default function SettingsPage() {
                   </Button>
                 </Link>
               )}
-              <Button variant="outline" size="sm" onClick={handleSignOut}>
-                Sign Out
-              </Button>
+              {!isLocalSingleUserMode && (
+                <Button variant="outline" size="sm" onClick={handleSignOut}>
+                  Sign Out
+                </Button>
+              )}
               <Avatar className="w-8 h-8">
-                <AvatarImage src={session.user.image || ""} />
+                <AvatarImage src="" />
                 <AvatarFallback className="bg-muted text-foreground text-sm">
-                  {session.user.name?.charAt(0) || session.user.email?.charAt(0) || "U"}
+                  {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
                 </AvatarFallback>
               </Avatar>
               <div className="hidden sm:block">
-                <p className="text-sm font-medium text-foreground">{session.user.name}</p>
-                <p className="text-xs text-muted-foreground">{session.user.email}</p>
+                <p className="text-sm font-medium text-foreground">{user.name}</p>
+                <p className="text-xs text-muted-foreground">{user.email}</p>
               </div>
             </div>
           </div>
@@ -439,6 +381,18 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              {/* Default AI model */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-foreground">
+                  Default AI Model
+                </Label>
+                <ModelSelector value={llmModel} onChange={setLlmModel} disabled={isLoading} />
+                <p className="text-xs text-muted-foreground">
+                  Used for clip selection on new sessions. Install recommended models with one click —
+                  you can still override this per session.
+                </p>
+              </div>
+
               {/* Preview */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium text-foreground">Preview</Label>
@@ -456,32 +410,6 @@ export default function SettingsPage() {
                     Your subtitle will look like this
                   </p>
                 </div>
-              </div>
-            </div>
-
-            {/* Notifications Section */}
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-foreground mb-1">
-                  Notifications
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  Manage how you receive updates about your clips
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="completion-emails" className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
-                  <Mail className="w-4 h-4" />
-                  Completion emails
-                  <span className="text-muted-foreground font-normal">— get notified when clips are ready</span>
-                </Label>
-                <Switch
-                  id="completion-emails"
-                  checked={completionEmails}
-                  onCheckedChange={setCompletionEmails}
-                  disabled={isLoading}
-                />
               </div>
             </div>
 
@@ -507,39 +435,6 @@ export default function SettingsPage() {
             )}
 
             {/* Save Button */}
-            {billingSummary?.monetization_enabled && (
-              <div className="border border-border rounded-lg p-4 bg-muted/40 space-y-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-foreground">Billing</h3>
-                  {billingSummary.plan !== "pro" && (
-                    <p className="text-sm text-muted-foreground">Pro plan: ${proPriceMonthly}/month</p>
-                  )}
-                  <p className="text-sm text-muted-foreground">
-                    {billingSummary.usage_limit === null
-                      ? `${billingSummary.usage_count} generations in this billing period`
-                      : `${billingSummary.usage_count}/${billingSummary.usage_limit} generations used this period`}
-                  </p>
-                  <p className="text-sm text-muted-foreground capitalize">
-                    Plan: {billingSummary.plan} ({billingSummary.subscription_status})
-                  </p>
-                </div>
-
-                <Button
-                  type="button"
-                  variant={billingSummary.plan === "pro" ? "outline" : "default"}
-                  onClick={handleBillingAction}
-                  disabled={isBillingActionLoading}
-                  className="w-full"
-                >
-                  {isBillingActionLoading
-                    ? "Loading..."
-                    : billingSummary.plan === "pro"
-                      ? "Manage Billing"
-                      : `Upgrade to Pro ($${proPriceMonthly}/mo)`}
-                </Button>
-              </div>
-            )}
-
             <Button
               onClick={handleSavePreferences}
               disabled={isLoading}

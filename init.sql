@@ -23,16 +23,8 @@ CREATE TABLE users (
     default_caption_template VARCHAR(50) DEFAULT 'default',
     default_highlight_color VARCHAR(9) DEFAULT '#8B5CF6',
     default_pill_color VARCHAR(9) DEFAULT '#1A1A1ACC',
-    notify_on_completion BOOLEAN NOT NULL DEFAULT true,
-    -- Monetization and billing fields
-    is_admin BOOLEAN NOT NULL DEFAULT false,
-    plan VARCHAR(20) NOT NULL DEFAULT 'free',
-    subscription_status VARCHAR(20) NOT NULL DEFAULT 'inactive',
-    stripe_customer_id VARCHAR(255) UNIQUE,
-    stripe_subscription_id VARCHAR(255) UNIQUE,
-    billing_period_start TIMESTAMP WITH TIME ZONE,
-    billing_period_end TIMESTAMP WITH TIME ZONE,
-    trial_ends_at TIMESTAMP WITH TIME ZONE
+    default_llm_model VARCHAR(200),
+    is_admin BOOLEAN NOT NULL DEFAULT false
 );
 
 -- Source table (created before tasks since tasks reference sources)
@@ -64,14 +56,13 @@ CREATE TABLE tasks (
 
     -- Caption template and B-roll options
     caption_template VARCHAR(50) DEFAULT 'default',
-    include_broll BOOLEAN DEFAULT false,
     processing_mode VARCHAR(20) NOT NULL DEFAULT 'fast',
+    llm_model VARCHAR(200),
     started_at TIMESTAMP WITH TIME ZONE,
     completed_at TIMESTAMP WITH TIME ZONE,
     cache_hit BOOLEAN NOT NULL DEFAULT false,
     error_code VARCHAR(80),
     stage_timings_json TEXT,
-    completion_notification_sent_at TIMESTAMP WITH TIME ZONE,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -149,13 +140,6 @@ CREATE TABLE verification (
     "expiresAt" TIMESTAMP WITH TIME ZONE NOT NULL,
     "createdAt" TIMESTAMP WITH TIME ZONE,
     "updatedAt" TIMESTAMP WITH TIME ZONE
-);
-
--- Stripe webhook idempotency table
-CREATE TABLE stripe_webhook_events (
-    id VARCHAR(255) PRIMARY KEY,
-    type VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes for better performance

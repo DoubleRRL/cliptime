@@ -2,7 +2,6 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import text
-from sqlalchemy.exc import ProgrammingError
 
 
 async def create_user(
@@ -12,8 +11,6 @@ async def create_user(
     email: str | None = None,
     name: str = "Test User",
     is_admin: bool = False,
-    plan: str = "free",
-    subscription_status: str = "inactive",
 ):
     user_id = user_id or str(uuid4())
     email = email or f"{user_id}@example.com"
@@ -27,10 +24,10 @@ async def create_user(
             """
             INSERT INTO users (
                 id, name, email, "emailVerified", "createdAt", "updatedAt",
-                is_admin, plan, subscription_status
+                is_admin
             ) VALUES (
                 :id, :name, :email, false, :created_at, :updated_at,
-                :is_admin, :plan, :subscription_status
+                :is_admin
             )
             """
         ),
@@ -41,8 +38,6 @@ async def create_user(
             "created_at": now,
             "updated_at": now,
             "is_admin": is_admin,
-            "plan": plan,
-            "subscription_status": subscription_status,
         },
     )
     await session.commit()
@@ -62,36 +57,20 @@ async def create_source(
     url: str = "https://www.youtube.com/watch?v=seeded",
 ):
     source_id = source_id or str(uuid4())
-    try:
-        await session.execute(
-            text(
-                """
-                INSERT INTO sources (id, type, title, url, created_at, updated_at)
-                VALUES (:id, :type, :title, :url, NOW(), NOW())
-                """
-            ),
-            {
-                "id": source_id,
-                "type": source_type,
-                "title": title,
-                "url": url,
-            },
-        )
-    except ProgrammingError:
-        await session.rollback()
-        await session.execute(
-            text(
-                """
-                INSERT INTO sources (id, type, title, created_at, updated_at)
-                VALUES (:id, :type, :title, NOW(), NOW())
-                """
-            ),
-            {
-                "id": source_id,
-                "type": source_type,
-                "title": title,
-            },
-        )
+    await session.execute(
+        text(
+            """
+            INSERT INTO sources (id, type, title, url, created_at, updated_at)
+            VALUES (:id, :type, :title, :url, NOW(), NOW())
+            """
+        ),
+        {
+            "id": source_id,
+            "type": source_type,
+            "title": title,
+            "url": url,
+        },
+    )
     await session.commit()
     return {"id": source_id, "title": title}
 

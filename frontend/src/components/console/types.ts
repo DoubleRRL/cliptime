@@ -11,6 +11,8 @@ export type ConsoleSession = {
   status: string;
   clipsCount: number;
   createdAt: string;
+  progress?: number;
+  progressMessage?: string;
 };
 
 export type ConsoleClip = {
@@ -21,6 +23,11 @@ export type ConsoleClip = {
   endTime: string;
   durationSeconds: number;
   viralityScore: number;
+  hookScore: number;
+  engagementScore: number;
+  valueScore: number;
+  shareabilityScore: number;
+  clipOrder: number;
   filename: string;
   videoUrl: string;
   text: string;

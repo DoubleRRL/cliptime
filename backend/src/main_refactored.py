@@ -16,7 +16,6 @@ import time
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,6 +66,9 @@ def create_app(
             logger.info("🛑 Shutting down SupoClip API...")
             await close_db()
             await queue_adapter.close_pool()
+            from .redis_client import close_redis
+
+            await close_redis()
             logger.info("✅ Cleanup complete")
 
     app = FastAPI(
@@ -159,18 +161,19 @@ def create_app(
 
     clips_dir = Path(runtime_config.temp_dir) / "clips"
     clips_dir.mkdir(parents=True, exist_ok=True)
-    app.mount("/clips", StaticFiles(directory=str(clips_dir)), name="clips")
 
     app.include_router(tasks.router)
     app.include_router(admin_router)
 
     from .api.routes.media import router as media_router
     from .api.routes.feedback import router as feedback_router
-    from .api.routes.billing import router as billing_router
+    from .api.routes.clips import router as clips_router
+    from .api.routes.models import router as models_router
 
     app.include_router(media_router)
     app.include_router(feedback_router)
-    app.include_router(billing_router)
+    app.include_router(clips_router)
+    app.include_router(models_router)
 
     @app.get("/")
     def read_root():
@@ -196,12 +199,9 @@ def create_app(
         try:
             await db.execute(text("SELECT 1"))
             return {"status": "healthy", "database": "connected"}
-        except Exception as e:
-            return {
-                "status": "unhealthy",
-                "database": "disconnected",
-                "error": str(e),
-            }
+        except Exception:
+            logger.exception("Database health check failed")
+            return {"status": "unhealthy", "database": "disconnected"}
 
     @app.get("/health/redis")
     async def check_redis_health():
@@ -210,12 +210,9 @@ def create_app(
             pool = await app.state.queue_adapter.get_pool()
             await pool.ping()
             return {"status": "healthy", "redis": "connected"}
-        except Exception as e:
-            return {
-                "status": "unhealthy",
-                "redis": "disconnected",
-                "error": str(e),
-            }
+        except Exception:
+            logger.exception("Redis health check failed")
+            return {"status": "unhealthy", "redis": "disconnected"}
 
     return app
 

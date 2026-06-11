@@ -1,9 +1,9 @@
 import { GET } from "./route";
 import { fetchBackend } from "@/server/backend-api";
-import { getServerSession } from "@/server/session";
+import { getEffectiveSession } from "@/server/session";
 
 vi.mock("@/server/session", () => ({
-  getServerSession: vi.fn(),
+  getEffectiveSession: vi.fn(),
 }));
 
 vi.mock("@/server/backend-api", async () => {
@@ -22,7 +22,7 @@ describe("/api/tasks", () => {
   });
 
   it("returns 401 when unauthenticated", async () => {
-    vi.mocked(getServerSession).mockResolvedValue(null);
+    vi.mocked(getEffectiveSession).mockResolvedValue(null);
 
     const response = await GET();
 
@@ -30,7 +30,7 @@ describe("/api/tasks", () => {
   });
 
   it("forwards the backend response and trace headers", async () => {
-    vi.mocked(getServerSession).mockResolvedValue({
+    vi.mocked(getEffectiveSession).mockResolvedValue({
       user: { id: "user-1" },
     } as never);
     vi.mocked(fetchBackend).mockResolvedValue(

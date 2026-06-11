@@ -1,13 +1,21 @@
 "use client";
 
-import { useSession } from "@/lib/auth-client";
 import LandingPage from "@/components/landing-page";
 import { ConsoleApp } from "@/components/console/console-app";
-import { isLandingOnlyModeEnabled } from "@/lib/app-flags";
+import { isLandingOnlyModeEnabled, isLocalSingleUserMode } from "@/lib/app-flags";
+import { useEffectiveSession } from "@/hooks/use-effective-session";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function HomePage() {
-  const { data: session, isPending } = useSession();
+  const { user, isPending } = useEffectiveSession();
+
+  if (isLandingOnlyModeEnabled) {
+    return <LandingPage />;
+  }
+
+  if (isLocalSingleUserMode) {
+    return <ConsoleApp />;
+  }
 
   if (isPending) {
     return (
@@ -21,7 +29,7 @@ export default function HomePage() {
     );
   }
 
-  if (isLandingOnlyModeEnabled || !session?.user) {
+  if (!user) {
     return <LandingPage />;
   }
 

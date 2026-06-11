@@ -142,11 +142,13 @@ LLM=google-gla:gemini-3-flash-preview
 LLM=google-gla:gemini-3-pro-preview
 ```
 
-### Ollama
+### Ollama (self-hosted default)
 ```bash
-LLM=ollama:gpt-oss:20b
+LLM=ollama:llama3.2:3b
 OLLAMA_BASE_URL=http://localhost:11434/v1
 ```
+
+Install [Ollama](https://ollama.com/download), run `ollama serve`, then open **Settings → Default AI Model**. The app detects your system RAM and recommends models to download — no cloud API key required.
 
 ## Troubleshooting
 

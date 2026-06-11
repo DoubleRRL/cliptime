@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { createProxyResponse, fetchBackend } from "@/server/backend-api";
-import { getServerSession } from "@/server/session";
+import { getEffectiveSession } from "@/server/session";
 
 export async function GET() {
-  const session = await getServerSession();
+  const session = await getEffectiveSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

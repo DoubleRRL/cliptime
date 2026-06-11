@@ -34,8 +34,7 @@ class ClipRepository:
         hook_type: Optional[str] = None,
     ) -> str:
         """Create a new clip record and return its ID."""
-        try:
-            result = await db.execute(
+        result = await db.execute(
                 sa_text("""
                     INSERT INTO generated_clips
                     (task_id, filename, file_path, start_time, end_time, duration,
@@ -68,31 +67,6 @@ class ClipRepository:
                     "hook_type": hook_type,
                 },
             )
-        except Exception:
-            await db.rollback()
-            result = await db.execute(
-                sa_text("""
-                    INSERT INTO generated_clips
-                    (task_id, filename, file_path, start_time, end_time, duration,
-                     text, relevance_score, reasoning, clip_order, created_at)
-                    VALUES
-                    (:task_id, :filename, :file_path, :start_time, :end_time, :duration,
-                     :text, :relevance_score, :reasoning, :clip_order, NOW())
-                    RETURNING id
-                """),
-                {
-                    "task_id": task_id,
-                    "filename": filename,
-                    "file_path": file_path,
-                    "start_time": start_time,
-                    "end_time": end_time,
-                    "duration": duration,
-                    "text": text,
-                    "relevance_score": relevance_score,
-                    "reasoning": reasoning,
-                    "clip_order": clip_order,
-                },
-            )
         clip_id = result.scalar()
         if not clip_id:
             raise RuntimeError("Failed to create clip: no ID returned")
@@ -102,24 +76,11 @@ class ClipRepository:
     @staticmethod
     async def get_clips_by_task(db: AsyncSession, task_id: str) -> List[Dict[str, Any]]:
         """Get all clips for a specific task, ordered by clip_order."""
-        try:
-            result = await db.execute(
+        result = await db.execute(
                 sa_text("""
                     SELECT id, filename, file_path, start_time, end_time, duration,
                            text, relevance_score, reasoning, clip_order, created_at,
                            virality_score, hook_score, engagement_score, value_score, shareability_score, hook_type
-                    FROM generated_clips
-                    WHERE task_id = :task_id
-                    ORDER BY clip_order ASC
-                """),
-                {"task_id": task_id},
-            )
-        except Exception:
-            await db.rollback()
-            result = await db.execute(
-                sa_text("""
-                    SELECT id, filename, file_path, start_time, end_time, duration,
-                           text, relevance_score, reasoning, clip_order, created_at
                     FROM generated_clips
                     WHERE task_id = :task_id
                     ORDER BY clip_order ASC
@@ -153,6 +114,26 @@ class ClipRepository:
             )
 
         return clips
+
+    @staticmethod
+    async def get_clip_owner_by_filename(
+        db: AsyncSession, filename: str
+    ) -> Optional[str]:
+        """Return the owning user's id for a clip filename, or None."""
+        result = await db.execute(
+            sa_text(
+                """
+                SELECT t.user_id
+                FROM generated_clips c
+                JOIN tasks t ON t.id = c.task_id
+                WHERE c.filename = :filename
+                LIMIT 1
+                """
+            ),
+            {"filename": filename},
+        )
+        row = result.fetchone()
+        return str(row.user_id) if row else None
 
     @staticmethod
     async def get_clips_count(db: AsyncSession, task_id: str) -> int:
@@ -192,27 +173,13 @@ class ClipRepository:
         db: AsyncSession, clip_id: str
     ) -> Optional[Dict[str, Any]]:
         """Get one clip by ID."""
-        try:
-            result = await db.execute(
+        result = await db.execute(
                 sa_text(
                     """
                     SELECT id, task_id, filename, file_path, start_time, end_time, duration,
                            text, relevance_score, reasoning, clip_order,
                            virality_score, hook_score, engagement_score, value_score, shareability_score, hook_type,
                            created_at
-                    FROM generated_clips
-                    WHERE id = :clip_id
-                    """
-                ),
-                {"clip_id": clip_id},
-            )
-        except Exception:
-            await db.rollback()
-            result = await db.execute(
-                sa_text(
-                    """
-                    SELECT id, task_id, filename, file_path, start_time, end_time, duration,
-                           text, relevance_score, reasoning, clip_order, created_at
                     FROM generated_clips
                     WHERE id = :clip_id
                     """

@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { headers } from "next/headers";
-import { auth } from "@/lib/auth";
+
 import prisma from "@/lib/prisma";
+import { getEffectiveSession } from "@/server/session";
+
+export const dynamic = "force-dynamic";
 import { AdminUserToggle } from "@/components/admin/admin-user-toggle";
 import { Badge } from "@/components/ui/badge";
 
@@ -20,7 +22,7 @@ export default async function AdminPage({
 }: {
   searchParams: Promise<{ user?: string }>;
 }) {
-  const session = await auth.api.getSession({ headers: await headers() });
+  const session = await getEffectiveSession();
 
   if (!session?.user) {
     return (
@@ -34,7 +36,7 @@ export default async function AdminPage({
     );
   }
 
-  const isAdmin = Boolean((session.user as { is_admin?: boolean }).is_admin);
+  const isAdmin = Boolean(session.user.is_admin);
 
   if (!isAdmin) {
     return (
@@ -73,7 +75,6 @@ export default async function AdminPage({
         email: true,
         name: true,
         is_admin: true,
-        plan: true,
         createdAt: true,
       },
     }),
@@ -286,7 +287,6 @@ export default async function AdminPage({
             <thead className="bg-muted/40">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">User</th>
-                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Plan</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Role</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Generations</th>
                 <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground">Created</th>
@@ -302,11 +302,6 @@ export default async function AdminPage({
                     <Link href={`/admin?user=${user.id}`} className="text-xs text-foreground underline">
                       View user tasks
                     </Link>
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge variant="outline" className="capitalize">
-                      {user.plan}
-                    </Badge>
                   </td>
                   <td className="px-4 py-3">
                     {user.is_admin ? (

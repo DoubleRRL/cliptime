@@ -15,13 +15,12 @@ import re
 from ...database import get_db
 from ...database import AsyncSessionLocal
 from ...services.task_service import TaskService
-from ...services.billing_service import BillingService, BillingLimitExceeded
-from ...auth_headers import get_signed_user_id, USER_ID_HEADER
+from ..deps import get_current_user_id
 from ...workers.job_queue import JobQueue
 from ...workers.progress import ProgressTracker
 from ...config import get_config
 from ...font_registry import is_font_accessible
-import redis.asyncio as redis
+from ...redis_client import get_redis
 from ...clip_editor import export_with_preset, EXPORT_PRESETS
 
 logger = logging.getLogger(__name__)
@@ -49,22 +48,11 @@ def _normalize_font_family(value: Any, default: str = "TikTokSans-Regular") -> s
     return default
 
 
-def _get_user_id_from_headers(request: Request) -> str:
-    """Get user ID. Monetization on: signed auth (same as create_task/billing_summary). Off: user_id or x-supoclip-user-id."""
-    config = get_config()
-    if config.monetization_enabled:
-        return get_signed_user_id(request, config)
-    user_id = request.headers.get("user_id") or request.headers.get(USER_ID_HEADER)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User authentication required")
-    return user_id
-
-
 async def _require_task_owner(
     request: Request, task_service: TaskService, db: AsyncSession, task_id: str
 ):
     """Ensure authenticated user owns the task."""
-    user_id = _get_user_id_from_headers(request)
+    user_id = get_current_user_id(request)
 
     task = await task_service.task_repo.get_task_by_id(db, task_id)
     if not task:
@@ -83,7 +71,7 @@ async def list_tasks(
     """
     Get all tasks for the authenticated user.
     """
-    user_id = _get_user_id_from_headers(request)
+    user_id = get_current_user_id(request)
 
     try:
         task_service = TaskService(db)
@@ -106,12 +94,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
 
     raw_source = data.get("source")
     config = get_config()
-    if config.monetization_enabled:
-        user_id = get_signed_user_id(request, config)
-    else:
-        user_id = request.headers.get("user_id") or request.headers.get(USER_ID_HEADER)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User authentication required")
+    user_id = get_current_user_id(request)
 
     # Get font options
     font_options = data.get("font_options", {})
@@ -136,13 +119,22 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     add_subtitles = data.get("add_subtitles", True)
     if not isinstance(add_subtitles, bool):
         add_subtitles = True
+
+    llm_model = data.get("llm_model")
+    if llm_model is not None:
+        from ...ai import VALID_MODEL_PATTERN
+
+        llm_model = str(llm_model).strip() or None
+        if llm_model and not VALID_MODEL_PATTERN.match(llm_model):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid llm_model format. Expected 'provider:model-name'.",
+            )
+
     if not raw_source or not raw_source.get("url"):
         raise HTTPException(status_code=400, detail="Source URL is required")
 
     try:
-        billing_service = BillingService(db)
-        await billing_service.assert_can_create_task(user_id)
-
         task_service = TaskService(db)
 
         # Create task
@@ -155,6 +147,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             font_color=font_color,
             caption_template=caption_template,
             processing_mode=processing_mode,
+            llm_model=llm_model,
         )
 
         # Get source type for worker
@@ -180,25 +173,20 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             add_subtitles,
             highlight_color,
             background_color,
+            llm_model=llm_model,
         )
 
         # Save source metadata for resume/retries in environments without sources.url column
-        redis_client = redis.Redis(
-            host=config.redis_host, port=config.redis_port, password=config.redis_password, decode_responses=True
+        await get_redis().set(
+            f"task_source:{task_id}",
+            json.dumps({
+                "url": raw_source["url"],
+                "source_type": source_type,
+                "output_format": output_format,
+                "add_subtitles": add_subtitles,
+            }),
+            ex=60 * 60 * 24 * 7,
         )
-        try:
-            await redis_client.set(
-                f"task_source:{task_id}",
-                json.dumps({
-                    "url": raw_source["url"],
-                    "source_type": source_type,
-                    "output_format": output_format,
-                    "add_subtitles": add_subtitles,
-                }),
-                ex=60 * 60 * 24 * 7,
-            )
-        finally:
-            await redis_client.close()
 
         logger.info(f"Task {task_id} created and job {job_id} enqueued")
 
@@ -210,43 +198,9 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
 
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except BillingLimitExceeded as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "code": "SUBSCRIPTION_REQUIRED",
-                "message": "Active subscription required to create tasks.",
-                "billing": e.summary,
-            },
-        )
     except Exception as e:
         logger.error(f"Error creating task: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating task: {str(e)}")
-
-
-@router.get("/billing/summary")
-async def get_billing_summary(request: Request, db: AsyncSession = Depends(get_db)):
-    """Get monetization status and current usage for authenticated user."""
-    config = get_config()
-    if config.monetization_enabled:
-        user_id = get_signed_user_id(request, config)
-    else:
-        user_id = request.headers.get("user_id") or request.headers.get(USER_ID_HEADER)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User authentication required")
-
-    try:
-        billing_service = BillingService(db)
-        summary = await billing_service.get_usage_summary(user_id)
-        return summary
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error retrieving billing summary: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error retrieving billing summary: {str(e)}",
-        )
 
 
 @router.get("/{task_id}")
@@ -304,7 +258,7 @@ async def get_task_progress_sse(task_id: str, request: Request):
     Streams progress updates as Server-Sent Events.
     """
 
-    user_id = _get_user_id_from_headers(request)
+    user_id = get_current_user_id(request)
 
     async with AsyncSessionLocal() as local_db:
         task_service = TaskService(local_db)
@@ -337,33 +291,21 @@ async def get_task_progress_sse(task_id: str, request: Request):
             yield {"event": "close", "data": json.dumps({"status": task.get("status")})}
             return
 
-        # Connect to Redis for real-time updates
-        runtime_config = get_config()
-        redis_client = redis.Redis(
-            host=runtime_config.redis_host,
-            port=runtime_config.redis_port,
-            password=runtime_config.redis_password,
-            decode_responses=True,
-        )
+        # Subscribe to progress updates via the shared pooled client; the
+        # pub/sub connection itself is closed by subscribe_to_progress.
+        async for progress_data in ProgressTracker.subscribe_to_progress(
+            get_redis(), task_id
+        ):
+            event_type = progress_data.get("event_type", "progress")
+            yield {"event": event_type, "data": json.dumps(progress_data)}
 
-        try:
-            # Subscribe to progress updates
-            async for progress_data in ProgressTracker.subscribe_to_progress(
-                redis_client, task_id
-            ):
-                event_type = progress_data.get("event_type", "progress")
-                yield {"event": event_type, "data": json.dumps(progress_data)}
-
-                # Close connection if task is done (unless listening for clip events only)
-                if progress_data.get("status") in ["completed", "error"] and not subscribe_clips:
-                    yield {
-                        "event": "close",
-                        "data": json.dumps({"status": progress_data.get("status")}),
-                    }
-                    break
-
-        finally:
-            await redis_client.close()
+            # Close connection if task is done (unless listening for clip events only)
+            if progress_data.get("status") in ["completed", "error"] and not subscribe_clips:
+                yield {
+                    "event": "close",
+                    "data": json.dumps({"status": progress_data.get("status")}),
+                }
+                break
 
     return EventSourceResponse(event_generator())
 
@@ -402,7 +344,7 @@ async def delete_task(
 ):
     """Delete a task and all its associated clips."""
     try:
-        user_id = _get_user_id_from_headers(request)
+        user_id = get_current_user_id(request)
         task_service = TaskService(db)
 
         # Get task to verify ownership
@@ -433,7 +375,7 @@ async def delete_clip(
 ):
     """Delete a specific clip."""
     try:
-        user_id = _get_user_id_from_headers(request)
+        user_id = get_current_user_id(request)
         task_service = TaskService(db)
 
         # Verify task ownership
@@ -446,7 +388,13 @@ async def delete_clip(
                 status_code=403, detail="Not authorized to delete this clip"
             )
 
-        # Delete the clip
+        clip = await task_service.clip_repo.get_clip_by_id(db, clip_id)
+        if not clip:
+            raise HTTPException(status_code=404, detail="Clip not found")
+
+        from ...file_cleanup import safe_unlink
+
+        safe_unlink(clip.get("file_path", ""))
         await task_service.clip_repo.delete_clip(db, clip_id)
 
         return {"message": "Clip deleted successfully"}
@@ -597,6 +545,61 @@ async def regenerate_clip(
         raise HTTPException(
             status_code=500, detail=f"Error regenerating clip: {str(e)}"
         )
+
+
+@router.post("/{task_id}/clips/{clip_id}/re-render")
+async def re_render_clip(
+    task_id: str, clip_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Re-render clip from source with boundary and style changes."""
+    try:
+        payload = await request.json()
+        start_delta = float(payload.get("start_delta_seconds", 0))
+        end_delta = float(payload.get("end_delta_seconds", 0))
+        font_family = _normalize_font_family(
+            payload.get("font_family", "TikTokSans-Regular")
+        )
+        font_size = _normalize_font_size(payload.get("font_size", 24))
+        font_color = _normalize_font_color(payload.get("font_color", "#FFFFFF"))
+        caption_template = payload.get("caption_template", "riverside")
+        highlight_color = payload.get("highlight_color", "#8B5CF6")
+        background_color = payload.get("background_color", "#1A1A1ACC")
+
+        task_service = TaskService(db)
+        await _require_task_owner(request, task_service, db, task_id)
+        task_record = await task_service.task_repo.get_task_by_id(db, task_id)
+        if not task_record:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if not is_font_accessible(font_family, task_record["user_id"]):
+            raise HTTPException(
+                status_code=400, detail="Selected font is not available"
+            )
+
+        updated_clip = await task_service.re_render_clip(
+            task_id,
+            clip_id,
+            start_delta,
+            end_delta,
+            font_family,
+            font_size,
+            font_color,
+            caption_template,
+            highlight_color=highlight_color,
+            background_color=background_color,
+        )
+        return {
+            "clip": updated_clip,
+            "forked": True,
+            "parent_clip_id": clip_id,
+            "message": "Clip saved as new version",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error re-rendering clip: {e}")
+        raise HTTPException(status_code=500, detail="Error re-rendering clip")
 
 
 @router.post("/{task_id}/settings")
@@ -769,13 +772,7 @@ async def cancel_task(
         if task.get("status") in ["completed", "error", "cancelled"]:
             return {"message": f"Task already in terminal state: {task.get('status')}"}
 
-        redis_client = redis.Redis(
-            host=config.redis_host, port=config.redis_port, password=config.redis_password, decode_responses=True
-        )
-        try:
-            await redis_client.setex(f"task_cancel:{task_id}", 3600, "1")
-        finally:
-            await redis_client.close()
+        await get_redis().setex(f"task_cancel:{task_id}", 3600, "1")
 
         await task_service.task_repo.update_task_status(
             db,
@@ -794,8 +791,11 @@ async def cancel_task(
 
 
 @router.get("/metrics/performance")
-async def get_performance_metrics(db: AsyncSession = Depends(get_db)):
+async def get_performance_metrics(
+    request: Request, db: AsyncSession = Depends(get_db)
+):
     """Get aggregate processing performance metrics by mode."""
+    get_current_user_id(request)
     try:
         task_service = TaskService(db)
         return await task_service.get_performance_metrics()
@@ -824,36 +824,25 @@ async def resume_task(
         output_format = "vertical"
         add_subtitles = True
 
-        redis_client = redis.Redis(
-            host=config.redis_host, port=config.redis_port, password=config.redis_password, decode_responses=True
-        )
-        try:
-            source_payload = await redis_client.get(f"task_source:{task_id}")
-            if source_payload:
-                parsed = json.loads(source_payload)
-                if not source_url:
-                    source_url = parsed.get("url")
-                if not source_type:
-                    source_type = parsed.get("source_type")
-                of = parsed.get("output_format", output_format)
-                if of in ("vertical", "original"):
-                    output_format = of
-                asub = parsed.get("add_subtitles", add_subtitles)
-                if isinstance(asub, bool):
-                    add_subtitles = asub
-        finally:
-            await redis_client.close()
+        redis_client = get_redis()
+        source_payload = await redis_client.get(f"task_source:{task_id}")
+        if source_payload:
+            parsed = json.loads(source_payload)
+            if not source_url:
+                source_url = parsed.get("url")
+            if not source_type:
+                source_type = parsed.get("source_type")
+            of = parsed.get("output_format", output_format)
+            if of in ("vertical", "original"):
+                output_format = of
+            asub = parsed.get("add_subtitles", add_subtitles)
+            if isinstance(asub, bool):
+                add_subtitles = asub
 
         if not source_url or not source_type:
             raise HTTPException(status_code=400, detail="Task source URL is missing")
 
-        redis_client = redis.Redis(
-            host=config.redis_host, port=config.redis_port, password=config.redis_password, decode_responses=True
-        )
-        try:
-            await redis_client.delete(f"task_cancel:{task_id}")
-        finally:
-            await redis_client.close()
+        await redis_client.delete(f"task_cancel:{task_id}")
 
         await task_service.task_repo.update_task_status(
             db,
@@ -882,6 +871,7 @@ async def resume_task(
             processing_mode,
             output_format,
             add_subtitles,
+            llm_model=task.get("llm_model"),
         )
 
         return {"message": "Task resumed", "job_id": job_id}
@@ -893,24 +883,22 @@ async def resume_task(
 
 
 @router.get("/dead-letter/list")
-async def list_dead_letter_tasks():
-    """List tasks that exhausted retries and landed in dead-letter store."""
-    redis_client = redis.Redis(
-        host=config.redis_host, port=config.redis_port, password=config.redis_password, decode_responses=True
-    )
-    try:
-        ids_result = redis_client.smembers("tasks:dead_letter")
-        ids = await ids_result if inspect.isawaitable(ids_result) else ids_result
-        items = []
-        safe_ids = list(ids or [])
-        for task_id in sorted(safe_ids):
-            payload = await redis_client.get(f"dead_letter:{task_id}")
-            if payload:
-                try:
-                    items.append(json.loads(payload))
-                except json.JSONDecodeError:
-                    items.append({"task_id": task_id, "raw": payload})
+async def list_dead_letter_tasks(request: Request, db: AsyncSession = Depends(get_db)):
+    """List tasks that exhausted retries and landed in dead-letter store (admin only)."""
+    from ...admin_auth import require_admin_user
 
-        return {"total": len(items), "tasks": items}
-    finally:
-        await redis_client.close()
+    await require_admin_user(request, db, config)
+    redis_client = get_redis()
+    ids_result = redis_client.smembers("tasks:dead_letter")
+    ids = await ids_result if inspect.isawaitable(ids_result) else ids_result
+    items = []
+    safe_ids = list(ids or [])
+    for task_id in sorted(safe_ids):
+        payload = await redis_client.get(f"dead_letter:{task_id}")
+        if payload:
+            try:
+                items.append(json.loads(payload))
+            except json.JSONDecodeError:
+                items.append({"task_id": task_id, "raw": payload})
+
+    return {"total": len(items), "tasks": items}

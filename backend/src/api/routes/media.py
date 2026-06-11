@@ -10,10 +10,8 @@ import logging
 import uuid
 import aiofiles
 
-from ...config import Config
-from ...database import get_db
-from ...auth_headers import get_signed_user_id, USER_ID_HEADER
-from ...services.billing_service import BillingService
+from ...config import get_config
+from ..deps import get_current_user_id
 from ...utils.async_helpers import run_in_thread
 import base64
 
@@ -27,31 +25,40 @@ from ...font_registry import (
     get_user_fonts_dir,
     sanitize_font_stem,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 
 logger = logging.getLogger(__name__)
-config = Config()
 router = APIRouter(tags=["media"])
 
+ALLOWED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+MAX_UPLOAD_BYTES = 4 * 1024 * 1024 * 1024  # 4 GB
+MAX_FONT_BYTES = 10 * 1024 * 1024  # 10 MB
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 
-def _get_authenticated_user_id(request: Request) -> str:
-    config = Config()
-    if config.monetization_enabled:
-        return get_signed_user_id(request, config)
 
-    # Self-hosted: accept user_id or x-supoclip-user-id (frontend uses buildBackendAuthHeaders)
-    user_id = request.headers.get("user_id") or request.headers.get(USER_ID_HEADER)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="User authentication required")
-    return user_id
+async def _stream_upload_to_path(upload: UploadFile, target: Path, max_bytes: int) -> None:
+    """Write an upload to disk in chunks, enforcing a size limit."""
+    written = 0
+    async with aiofiles.open(target, "wb") as out:
+        while True:
+            chunk = await upload.read(UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            written += len(chunk)
+            if written > max_bytes:
+                await out.close()
+                target.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds maximum size of {max_bytes // (1024 * 1024)} MB",
+                )
+            await out.write(chunk)
 
 
 @router.get("/fonts")
 async def get_available_fonts_route(request: Request):
     """Get list of available fonts."""
     try:
-        user_id = _get_authenticated_user_id(request)
+        user_id = get_current_user_id(request)
         if not FONTS_DIR.exists():
             return {"fonts": [], "message": "Fonts directory not found"}
 
@@ -68,7 +75,7 @@ async def get_available_fonts_route(request: Request):
 async def get_font_file(font_name: str, request: Request):
     """Serve a specific font file."""
     try:
-        user_id = _get_authenticated_user_id(request)
+        user_id = get_current_user_id(request)
         font_path = find_font_path(font_name, user_id=user_id)
 
         if not font_path:
@@ -79,10 +86,7 @@ async def get_font_file(font_name: str, request: Request):
         return FileResponse(
             path=str(font_path),
             media_type=media_type,
-            headers={
-                "Cache-Control": "public, max-age=31536000",
-                "Access-Control-Allow-Origin": "*",
-            },
+            headers={"Cache-Control": "public, max-age=31536000"},
         )
     except HTTPException:
         raise
@@ -95,22 +99,10 @@ async def get_font_file(font_name: str, request: Request):
 async def upload_font(
     request: Request,
     uploaded_file: UploadFile = File(..., alias="file"),
-    db: AsyncSession = Depends(get_db),
 ):
     """Upload a custom .ttf/.otf font so it appears in the font picker."""
     try:
-        user_id = _get_authenticated_user_id(request)
-        billing_service = BillingService(db)
-        summary = await billing_service.get_usage_summary(user_id)
-        pro_access = not summary.get("monetization_enabled") or (
-            summary.get("plan") == "pro"
-            and summary.get("subscription_status") in {"active", "trialing"}
-        )
-        if not pro_access:
-            raise HTTPException(
-                status_code=403,
-                detail="Custom font uploads are available for Pro users only",
-            )
+        user_id = get_current_user_id(request)
 
         if not uploaded_file.filename:
             raise HTTPException(status_code=400, detail="Missing file name")
@@ -133,9 +125,7 @@ async def upload_font(
             target_path = user_fonts_dir / f"{stored_stem}-{suffix}{extension}"
             suffix += 1
 
-        content = await uploaded_file.read()
-        async with aiofiles.open(target_path, "wb") as uploaded_font:
-            await uploaded_font.write(content)
+        await _stream_upload_to_path(uploaded_file, target_path, MAX_FONT_BYTES)
 
         logger.info(f"Uploaded font: {target_path.name}")
 
@@ -177,7 +167,6 @@ async def get_available_transitions():
                     "display_name": transition_file.stem.replace("_", " ")
                     .replace("-", " ")
                     .title(),
-                    "file_path": transition_path,
                 }
             )
 
@@ -268,7 +257,7 @@ def _process_preview_video(video_path: Path, seek_seconds: float) -> dict:
 async def preview_layout(request: Request):
     """Upload video (or JPEG frame) and detect speaker layout for caption preview."""
     try:
-        _get_authenticated_user_id(request)
+        get_current_user_id(request)
         form_data = await request.form()
 
         seek_raw = form_data.get("seek_seconds", "300")
@@ -283,15 +272,18 @@ async def preview_layout(request: Request):
         if getattr(video_file, "filename", None) and hasattr(video_file, "read"):
             upload = cast(UploadFile, video_file)
             upload_filename = upload.filename or "upload.mp4"
-            uploads_dir = Path(config.temp_dir) / "uploads"
+            file_extension = Path(upload_filename).suffix.lower() or ".mp4"
+            if file_extension not in ALLOWED_VIDEO_EXTENSIONS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unsupported video format. Use one of: {', '.join(sorted(ALLOWED_VIDEO_EXTENSIONS))}",
+                )
+            uploads_dir = Path(get_config().temp_dir) / "uploads"
             uploads_dir.mkdir(parents=True, exist_ok=True)
-            file_extension = Path(upload_filename).suffix or ".mp4"
             unique_filename = f"{uuid.uuid4()}{file_extension}"
             video_path = uploads_dir / unique_filename
 
-            content = await upload.read()
-            async with aiofiles.open(video_path, "wb") as f:
-                await f.write(content)
+            await _stream_upload_to_path(upload, video_path, MAX_UPLOAD_BYTES)
 
             layout = await run_in_thread(_process_preview_video, video_path, seek_seconds)
             layout["video_path"] = f"upload://{unique_filename}"
@@ -334,7 +326,7 @@ async def preview_layout(request: Request):
 async def upload_video(request: Request):
     """Upload a video to the server."""
     try:
-        _get_authenticated_user_id(request)
+        get_current_user_id(request)
 
         # Get the form data
         form_data = await request.form()
@@ -346,19 +338,20 @@ async def upload_video(request: Request):
         upload = cast(UploadFile, video_file)
         upload_filename = upload.filename or "upload.mp4"
 
-        # Create uploads directory
-        uploads_dir = Path(config.temp_dir) / "uploads"
+        file_extension = Path(upload_filename).suffix.lower() or ".mp4"
+        if file_extension not in ALLOWED_VIDEO_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported video format. Use one of: {', '.join(sorted(ALLOWED_VIDEO_EXTENSIONS))}",
+            )
+
+        uploads_dir = Path(get_config().temp_dir) / "uploads"
         uploads_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate unique filename
-        file_extension = Path(upload_filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_extension}"
         video_path = uploads_dir / unique_filename
 
-        # Save the uploaded file
-        async with aiofiles.open(video_path, "wb") as f:
-            content = await upload.read()
-            await f.write(content)
+        await _stream_upload_to_path(upload, video_path, MAX_UPLOAD_BYTES)
 
         logger.info(f"✅ Video uploaded successfully to: {video_path}")
 

@@ -3,8 +3,29 @@
 import { useCallback, useEffect, useState } from "react";
 import { ConsoleShell } from "@/components/console/console-shell";
 import type { ConsoleSession, ConsoleClip, ConsoleSessionSettings } from "@/components/console/types";
+import { useTaskProgress } from "@/hooks/use-task-progress";
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const ACTIVE_SESSION_KEY = "supoclip:activeSessionId";
+
+function mapTaskToSession(task: Record<string, unknown>): ConsoleSession {
+  const progressRaw = task.progress;
+  const progress =
+    typeof progressRaw === "number"
+      ? progressRaw
+      : progressRaw != null && progressRaw !== ""
+        ? Number(progressRaw)
+        : undefined;
+
+  return {
+    id: String(task.id),
+    title: String(task.source_title || task.title || "Untitled"),
+    status: String(task.status || "unknown"),
+    clipsCount: Number(task.clips_count ?? 0),
+    createdAt: String(task.created_at || ""),
+    progress: Number.isFinite(progress) ? progress : undefined,
+    progressMessage: String(task.progress_message || ""),
+  };
+}
 
 function mapClip(raw: Record<string, unknown>, index: number): ConsoleClip {
   return {
@@ -15,8 +36,13 @@ function mapClip(raw: Record<string, unknown>, index: number): ConsoleClip {
     endTime: String(raw.end_time || ""),
     durationSeconds: Number(raw.duration ?? 0),
     viralityScore: Number(raw.virality_score ?? 0),
+    hookScore: Number(raw.hook_score ?? 0),
+    engagementScore: Number(raw.engagement_score ?? 0),
+    valueScore: Number(raw.value_score ?? 0),
+    shareabilityScore: Number(raw.shareability_score ?? 0),
+    clipOrder: Number(raw.clip_order ?? index + 1),
     filename: String(raw.filename || ""),
-    videoUrl: String(raw.video_url || ""),
+    videoUrl: raw.video_url ? `/api${String(raw.video_url)}` : "",
     text: String(raw.text || ""),
     reasoning: String(raw.reasoning || ""),
     hookType: raw.hook_type ? String(raw.hook_type) : null,
@@ -32,23 +58,26 @@ export function ConsoleApp() {
   const [sessionSettings, setSessionSettings] = useState<ConsoleSessionSettings | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+
   const loadSessions = useCallback(async () => {
     try {
       const response = await fetch("/api/tasks");
       if (!response.ok) return;
       const data = await response.json();
       const tasks = (data.tasks || data || []) as Array<Record<string, unknown>>;
-      const mapped: ConsoleSession[] = tasks.map((task) => ({
-        id: String(task.id),
-        title: String(task.source_title || task.title || "Untitled"),
-        status: String(task.status || "unknown"),
-        clipsCount: Number(task.clips_count ?? 0),
-        createdAt: String(task.created_at || ""),
-      }));
+      const mapped = tasks.map(mapTaskToSession);
       setSessions(mapped);
       setActiveSessionId((current) => {
         if (current && mapped.some((session) => session.id === current)) {
           return current;
+        }
+        const stored =
+          typeof window !== "undefined"
+            ? window.sessionStorage.getItem(ACTIVE_SESSION_KEY)
+            : null;
+        if (stored && mapped.some((session) => session.id === stored)) {
+          return stored;
         }
         return mapped[0]?.id ?? null;
       });
@@ -75,6 +104,18 @@ export function ConsoleApp() {
         selected: selectedById.get(String(clip.id)) ?? false,
       }));
     });
+    const hydrated = mapTaskToSession({ ...task, clips_count: rawClips.length });
+    setSessions((previous) =>
+      previous.map((session) =>
+        session.id === taskId
+          ? {
+              ...session,
+              ...hydrated,
+              clipsCount: rawClips.length,
+            }
+          : session,
+      ),
+    );
   }, []);
 
   const handleClipReady = useCallback(
@@ -91,6 +132,30 @@ export function ConsoleApp() {
     [activeSessionId, clips.length, loadClips],
   );
 
+  const handleFinished = useCallback(
+    (status: string) => {
+      if (activeSessionId) {
+        setSessions((previous) =>
+          previous.map((session) =>
+            session.id === activeSessionId ? { ...session, status } : session,
+          ),
+        );
+        void loadClips(activeSessionId);
+        void loadSessions();
+      }
+    },
+    [activeSessionId, loadClips, loadSessions],
+  );
+
+  const progressState = useTaskProgress({
+    taskId: activeSessionId,
+    taskStatus: activeSession?.status ?? null,
+    initialProgress: activeSession?.progress ?? 0,
+    initialMessage: activeSession?.progressMessage ?? "",
+    onClipReady: handleClipReady,
+    onFinished: handleFinished,
+  });
+
   const handleClipUpdated = useCallback((updated: ConsoleClip) => {
     setClips((previous) =>
       previous.map((clip) => (clip.id === updated.id ? { ...clip, ...updated } : clip)),
@@ -106,14 +171,24 @@ export function ConsoleApp() {
     });
   }, []);
 
+  const handleSelectSession = useCallback((sessionId: string) => {
+    setActiveSessionId(sessionId);
+  }, []);
+
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
 
   useEffect(() => {
     if (activeSessionId) {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(ACTIVE_SESSION_KEY, activeSessionId);
+      }
       void loadClips(activeSessionId);
     } else {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+      }
       setClips([]);
       setSessionSettings(null);
     }
@@ -121,14 +196,14 @@ export function ConsoleApp() {
 
   return (
     <ConsoleShell
-      apiUrl={apiUrl}
       sessions={sessions}
       activeSessionId={activeSessionId}
-      onSelectSession={setActiveSessionId}
+      onSelectSession={handleSelectSession}
       clips={clips}
       onClipsChange={setClips}
       sessionSettings={sessionSettings}
       loading={loading}
+      progress={progressState}
       onRefresh={loadSessions}
       onSessionCreated={(sessionId) => {
         setActiveSessionId(sessionId);

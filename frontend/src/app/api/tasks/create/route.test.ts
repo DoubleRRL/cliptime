@@ -1,19 +1,9 @@
-import { headers } from "next/headers";
-
 import { POST } from "./route";
-import { auth } from "@/lib/auth";
+import { getEffectiveSession } from "@/server/session";
 import { buildBackendAuthHeaders } from "@/lib/backend-auth";
 
-vi.mock("next/headers", () => ({
-  headers: vi.fn(),
-}));
-
-vi.mock("@/lib/auth", () => ({
-  auth: {
-    api: {
-      getSession: vi.fn(),
-    },
-  },
+vi.mock("@/server/session", () => ({
+  getEffectiveSession: vi.fn(),
 }));
 
 vi.mock("@/lib/backend-auth", () => ({
@@ -24,11 +14,10 @@ describe("/api/tasks/create", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.stubGlobal("fetch", vi.fn());
-    vi.mocked(headers).mockResolvedValue(new Headers());
   });
 
   it("returns 401 when unauthenticated", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue(null as never);
+    vi.mocked(getEffectiveSession).mockResolvedValue(null);
 
     const response = await POST(
       new Request("http://localhost/api/tasks/create", {
@@ -43,9 +32,9 @@ describe("/api/tasks/create", () => {
   });
 
   it("proxies task creation to the backend", async () => {
-    vi.mocked(auth.api.getSession).mockResolvedValue({
-      user: { id: "user-1" },
-    } as never);
+    vi.mocked(getEffectiveSession).mockResolvedValue({
+      user: { id: "user-1", name: "Test", email: "test@example.com" },
+    });
     vi.mocked(buildBackendAuthHeaders).mockReturnValue({
       "x-supoclip-user-id": "user-1",
     });

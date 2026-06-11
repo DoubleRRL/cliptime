@@ -21,6 +21,7 @@ from ..video_utils import (
     get_video_transcript,
     create_clips_with_transitions,
     create_optimized_clip,
+    encoding_quality_for_mode,
     parse_timestamp_to_seconds,
 )
 from ..ai import get_most_relevant_parts_by_transcript
@@ -259,6 +260,7 @@ class VideoService:
         add_subtitles: bool = True,
         highlight_color: str = "#8B5CF6",
         background_color: str = "#1A1A1ACC",
+        processing_mode: str = "quality",
     ) -> Optional[Dict[str, Any]]:
         """Render a single clip in the thread pool and return clip_info dict, or None on failure."""
         try:
@@ -293,6 +295,7 @@ class VideoService:
                 output_format,
                 highlight_color=highlight_color,
                 background_color=background_color,
+                encode_quality=encoding_quality_for_mode(processing_mode),
             )
 
             if not success:
@@ -396,7 +399,9 @@ class VideoService:
                     raise Exception("Video file not found")
 
             # Post-download duration guard (catches cases where preflight info was unavailable)
-            file_duration = VideoService._get_file_duration(video_path)
+            file_duration = await run_in_thread(
+                VideoService._get_file_duration, video_path
+            )
             if file_duration and file_duration > config.max_video_duration:
                 mins = config.max_video_duration // 60
                 raise Exception(

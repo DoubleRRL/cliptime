@@ -37,17 +37,9 @@ model User {
   default_highlight_color String? @default("#8B5CF6") @db.VarChar(9)
   default_pill_color String? @default("#1A1A1ACC") @db.VarChar(9)
   default_caption_template String? @default("riverside") @db.VarChar(50)
-  notify_on_completion Boolean  @default(true)
+  default_llm_model String?   @db.VarChar(200)
 
-  // Monetization and billing
-  plan                 String    @default("free") @db.VarChar(20)
-  subscription_status  String    @default("inactive") @db.VarChar(20)
   is_admin             Boolean   @default(false)
-  stripe_customer_id   String?   @unique @db.VarChar(255)
-  stripe_subscription_id String? @unique @db.VarChar(255)
-  billing_period_start DateTime? @db.Timestamptz
-  billing_period_end   DateTime? @db.Timestamptz
-  trial_ends_at        DateTime? @db.Timestamptz
 
   // Relationships
   tasks         Task[]
@@ -63,7 +55,6 @@ model Task {
   source_id            String?
   generated_clips_ids  String[]
   status               String    @default("pending") @db.VarChar(20)
-  completion_notification_sent_at DateTime? @db.Timestamptz
 
   // Font customization fields
   font_family          String?   @default("TikTokSans-Regular") @db.VarChar(100)
@@ -141,12 +132,4 @@ model Verification {
   updatedAt  DateTime?
 
   @@map("verification")
-}
-
-model StripeWebhookEvent {
-  id         String   @id
-  type       String
-  created_at DateTime @default(now()) @db.Timestamptz
-
-  @@map("stripe_webhook_events")
 }

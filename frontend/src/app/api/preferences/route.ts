@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPrismaClient } from "@/server/prisma";
-import { getServerSession } from "@/server/session";
+import { getEffectiveSession } from "@/server/session";
 
 const HEX_6 = /^#[0-9A-Fa-f]{6}$/;
 const HEX_8 = /^#[0-9A-Fa-f]{8}$/;
@@ -12,7 +12,7 @@ function isHexColor(value: string): boolean {
 // GET /api/preferences - Get user preferences
 export async function GET(_: NextRequest) {
   try {
-    const session = await getServerSession();
+    const session = await getEffectiveSession();
 
     if (!session?.user?.id) {
       return NextResponse.json(
@@ -31,7 +31,7 @@ export async function GET(_: NextRequest) {
         default_highlight_color: true,
         default_pill_color: true,
         default_caption_template: true,
-        notify_on_completion: true,
+        default_llm_model: true,
       },
     });
 
@@ -49,7 +49,7 @@ export async function GET(_: NextRequest) {
       highlightColor: user.default_highlight_color || "#8B5CF6",
       pillColor: user.default_pill_color || "#1A1A1ACC",
       captionTemplate: user.default_caption_template || "riverside",
-      notifyOnCompletion: user.notify_on_completion ?? true,
+      llmModel: user.default_llm_model || null,
     });
   } catch (error) {
     console.error("Error fetching preferences:", error);
@@ -63,7 +63,7 @@ export async function GET(_: NextRequest) {
 // PATCH /api/preferences - Update user preferences
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getServerSession();
+    const session = await getEffectiveSession();
 
     if (!session?.user?.id) {
       return NextResponse.json(
@@ -80,7 +80,7 @@ export async function PATCH(request: NextRequest) {
       highlightColor,
       pillColor,
       captionTemplate,
-      notifyOnCompletion,
+      llmModel,
     } = body;
 
     if (fontFamily && typeof fontFamily !== "string") {
@@ -129,11 +129,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (
-      notifyOnCompletion !== undefined &&
-      typeof notifyOnCompletion !== "boolean"
+      llmModel !== undefined &&
+      llmModel !== null &&
+      (typeof llmModel !== "string" || llmModel.length > 200)
     ) {
       return NextResponse.json(
-        { error: "Invalid notifyOnCompletion" },
+        { error: "Invalid llmModel" },
         { status: 400 }
       );
     }
@@ -148,9 +149,7 @@ export async function PATCH(request: NextRequest) {
         ...(highlightColor !== undefined && { default_highlight_color: highlightColor }),
         ...(pillColor !== undefined && { default_pill_color: pillColor }),
         ...(captionTemplate !== undefined && { default_caption_template: captionTemplate }),
-        ...(notifyOnCompletion !== undefined && {
-          notify_on_completion: notifyOnCompletion,
-        }),
+        ...(llmModel !== undefined && { default_llm_model: llmModel }),
       },
       select: {
         default_font_family: true,
@@ -159,7 +158,7 @@ export async function PATCH(request: NextRequest) {
         default_highlight_color: true,
         default_pill_color: true,
         default_caption_template: true,
-        notify_on_completion: true,
+        default_llm_model: true,
       },
     });
 
@@ -170,7 +169,7 @@ export async function PATCH(request: NextRequest) {
       highlightColor: updatedUser.default_highlight_color,
       pillColor: updatedUser.default_pill_color,
       captionTemplate: updatedUser.default_caption_template,
-      notifyOnCompletion: updatedUser.notify_on_completion,
+      llmModel: updatedUser.default_llm_model,
     });
   } catch (error) {
     console.error("Error updating preferences:", error);

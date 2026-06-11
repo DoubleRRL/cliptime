@@ -2,16 +2,14 @@
 
 import { useEffect, useRef } from "react";
 
-import { useSession } from "@/lib/auth-client";
+import { useEffectiveSession } from "@/hooks/use-effective-session";
 import { identify } from "@/lib/datafast";
 
 export function DataFastIdentity() {
-  const { data: session } = useSession();
+  const { user } = useEffectiveSession();
   const lastPayloadRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const user = session?.user;
-
     if (!user?.id) {
       lastPayloadRef.current = null;
       return;
@@ -20,8 +18,7 @@ export function DataFastIdentity() {
     const payload = {
       user_id: user.id,
       ...(user.name ? { name: user.name } : {}),
-      ...(user.image ? { image: user.image } : {}),
-      is_admin: String(Boolean((user as { is_admin?: boolean }).is_admin)),
+      is_admin: String(Boolean(user.is_admin)),
     };
     const serializedPayload = JSON.stringify(payload);
 
@@ -31,7 +28,7 @@ export function DataFastIdentity() {
 
     identify(payload);
     lastPayloadRef.current = serializedPayload;
-  }, [session?.user]);
+  }, [user]);
 
   return null;
 }

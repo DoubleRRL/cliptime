@@ -1,43 +1,34 @@
-import fs from "fs";
-import path from "path";
-
 import { expect, test } from "@playwright/test";
 
-const seed = JSON.parse(
-  fs.readFileSync(path.join(process.cwd(), "e2e", ".seed.json"), "utf8"),
-);
+test("local user can open the console and save preferences", async ({ page }) => {
+  await page.goto("/");
 
-async function signIn(page: import("@playwright/test").Page, email: string, password: string) {
-  await page.goto("/sign-in");
-  await page.getByPlaceholder("Email").fill(email);
-  await page.getByPlaceholder("Password").fill(password);
-  await page.getByRole("button", { name: "Sign In" }).click();
-  await page.waitForURL("**/");
-}
-
-test("regular user can browse seeded tasks and save preferences", async ({ page }) => {
-  await signIn(page, seed.regular.email, seed.regular.password);
-
-  await page.goto("/list");
-  await expect(page.getByText(seed.completedSourceTitle)).toBeVisible();
-
-  await page.goto(`/tasks/${seed.completedTaskId}`);
-  await expect(page.getByText("This is a seeded clip")).toBeVisible();
+  await expect(page.getByRole("link", { name: "SupoClip" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /new session/i })).toBeVisible();
 
   await page.goto("/settings");
   await page.getByRole("button", { name: /save preferences/i }).click();
   await expect(page.getByText(/preferences saved/i)).toBeVisible();
-
-  await page.goto("/admin");
-  await expect(page.getByText(/not an admin/i)).toBeVisible();
 });
 
-test("admin user can access the admin dashboard", async ({ page }) => {
-  await signIn(page, seed.admin.email, seed.admin.password);
+test("console header settings link navigates away from the app", async ({ page }) => {
+  await page.goto("/");
 
+  await page.getByRole("link", { name: /settings/i }).click();
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole("button", { name: /save preferences/i })).toBeVisible();
+});
+
+test("local user can access the admin dashboard", async ({ page }) => {
   await page.goto("/admin");
+
   await expect(page.getByText(/admin dashboard/i)).toBeVisible();
   await expect(
     page.getByRole("heading", { name: /currently processing tasks/i }),
   ).toBeVisible();
+});
+
+test("sign-in redirects to home in local single-user mode", async ({ page }) => {
+  await page.goto("/sign-in");
+  await expect(page).toHaveURL("/");
 });

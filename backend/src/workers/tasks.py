@@ -29,6 +29,7 @@ async def process_video_task(
     highlight_color: str = "#8B5CF6",
     background_color: str = "#1A1A1ACC",
     cleanup_settings: Dict[str, Any] | None = None,
+    llm_model: str | None = None,
 ) -> Dict[str, Any]:
     """
     Background worker task to process a video.
@@ -46,12 +47,17 @@ async def process_video_task(
     Returns:
         Dict with processing results
     """
+    from ..ai import set_model_override
     from ..database import AsyncSessionLocal
     from ..services.task_service import TaskService
     from ..workers.progress import ProgressTracker
 
     set_trace_id(f"task-{task_id}")
-    logger.info(f"Worker processing task {task_id}")
+    set_model_override(llm_model)
+    if llm_model:
+        logger.info(f"Worker processing task {task_id} with model override {llm_model}")
+    else:
+        logger.info(f"Worker processing task {task_id}")
 
     # Create progress tracker
     progress = ProgressTracker(ctx["redis"], task_id)
@@ -146,6 +152,7 @@ async def generate_clips_from_query_task(
     caption_template: str = "riverside",
 ) -> Dict[str, Any]:
     """Background worker task to find and render custom clips from a user query."""
+    from ..ai import set_model_override
     from ..database import AsyncSessionLocal
     from ..services.task_service import TaskService
     from ..workers.progress import ProgressTracker
@@ -157,6 +164,10 @@ async def generate_clips_from_query_task(
 
     async with AsyncSessionLocal() as db:
         task_service = TaskService(db)
+
+        # Custom clip search should use the same model the task was created with.
+        task_record = await task_service.task_repo.get_task_by_id(db, task_id)
+        set_model_override((task_record or {}).get("llm_model"))
 
         async def clip_ready_callback(
             clip_index: int, total_clips: int, clip_data: dict

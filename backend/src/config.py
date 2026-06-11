@@ -50,14 +50,13 @@ class Config:
             os.getenv("WORKER_JOB_TIMEOUT_SECONDS", "21600")
         )
 
-        self.self_host = self._get_bool_env("SELF_HOST", True)
-        self.monetization_enabled = not self.self_host
         self.backend_auth_secret = self._get_optional_env("BACKEND_AUTH_SECRET")
+        # Signed-header auth is an optional hardening layer: enabled whenever a
+        # shared secret is configured (frontend signs with the same secret).
+        self.require_signed_auth = self.backend_auth_secret is not None
         self.auth_signature_ttl_seconds = int(
             os.getenv("AUTH_SIGNATURE_TTL_SECONDS", "300")
         )
-        self.free_plan_task_limit = int(os.getenv("FREE_PLAN_TASK_LIMIT", "10"))
-        self.pro_plan_task_limit = int(os.getenv("PRO_PLAN_TASK_LIMIT", "0"))
         self.cors_origins = self._get_csv_env(
             "CORS_ORIGINS",
             [
@@ -65,15 +64,10 @@ class Config:
                 "http://sp.localhost:3000",
             ],
         )
-        self.resend_api_key = self._get_optional_env("RESEND_API_KEY")
-        self.resend_from_email = os.getenv(
-            "RESEND_FROM_EMAIL", "SupoClip <onboarding@resend.dev>"
-        )
         self.app_base_url = (
             self._get_optional_env("NEXT_PUBLIC_APP_URL") or "http://localhost:3000"
         ).rstrip("/")
         self.discord_feedback_webhook_url = self._get_optional_env("DISCORD_FEEDBACK_WEBHOOK_URL")
-        self.discord_sales_webhook_url = self._get_optional_env("DISCORD_SALES_WEBHOOK_URL")
         self.default_processing_mode = os.getenv("DEFAULT_PROCESSING_MODE", "quality")
         self.fast_mode_max_clips = int(os.getenv("FAST_MODE_MAX_CLIPS", "4"))
         self.balanced_mode_max_clips = int(os.getenv("BALANCED_MODE_MAX_CLIPS", "7"))
@@ -97,6 +91,10 @@ class Config:
         self.micro_per_window = int(os.getenv("MICRO_PER_WINDOW", "3"))
         self.deep_per_window = int(os.getenv("DEEP_PER_WINDOW", "2"))
         self.ollama_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "4096"))
+        # Number of clips rendered concurrently per task
+        self.parallel_clip_renders = max(
+            1, int(os.getenv("PARALLEL_CLIP_RENDERS", "2"))
+        )
 
     @staticmethod
     def _get_optional_env(name: str):
