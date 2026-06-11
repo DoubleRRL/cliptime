@@ -190,7 +190,18 @@ class TaskService:
             cached_analysis_json = (
                 cache_entry.get("analysis_json") if cache_entry else None
             )
-            cache_hit = bool(cached_transcript and cached_analysis_json)
+            cache_hit = False
+            if cached_transcript and cached_analysis_json:
+                try:
+                    cached_analysis = json.loads(cached_analysis_json)
+                    cached_segments = cached_analysis.get("most_relevant_segments") or []
+                    if not cached_segments:
+                        cached_segments = list(
+                            cached_analysis.get("micro_hooks") or []
+                        ) + list(cached_analysis.get("deep_context_clips") or [])
+                    cache_hit = bool(cached_segments)
+                except Exception:
+                    cache_hit = False
 
             await self.task_repo.update_task_runtime_metadata(
                 self.db,

@@ -1,0 +1,36 @@
+export type ConsoleSessionSettings = {
+  fontFamily: string;
+  fontSize: number;
+  fontColor: string;
+  captionTemplate: string;
+};
+
+export type ConsoleSession = {
+  id: string;
+  title: string;
+  status: string;
+  clipsCount: number;
+  createdAt: string;
+};
+
+export type ConsoleClip = {
+  id: string;
+  title: string;
+  postTitle: string;
+  startTime: string;
+  endTime: string;
+  durationSeconds: number;
+  viralityScore: number;
+  filename: string;
+  videoUrl: string;
+  text: string;
+  reasoning: string;
+  hookType: string | null;
+  selected: boolean;
+  parentClipId?: string;
+};
+
+export type WindowProgress = {
+  current: number;
+  total: number;
+};

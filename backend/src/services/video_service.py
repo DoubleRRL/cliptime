@@ -435,22 +435,35 @@ class VideoService:
                 try:
                     cached_analysis = json.loads(cached_analysis_json)
                     segments = cached_analysis.get("most_relevant_segments", [])
+                    if not segments:
+                        micro = cached_analysis.get("micro_hooks") or []
+                        deep = cached_analysis.get("deep_context_clips") or []
+                        segments = list(micro) + list(deep)
 
-                    class _SimpleResult:
-                        def __init__(self, payload: Dict[str, Any]):
-                            self.summary = payload.get("summary")
-                            self.key_topics = payload.get("key_topics")
-                            self.most_relevant_segments = payload.get(
-                                "most_relevant_segments", []
-                            )
+                    if segments:
+                        class _SimpleResult:
+                            def __init__(self, payload: Dict[str, Any]):
+                                self.summary = payload.get("summary")
+                                self.key_topics = payload.get("key_topics")
+                                self.most_relevant_segments = payload.get(
+                                    "most_relevant_segments", []
+                                )
+                                self.micro_hooks = payload.get("micro_hooks", [])
+                                self.deep_context_clips = payload.get(
+                                    "deep_context_clips", []
+                                )
 
-                    relevant_parts = _SimpleResult(
-                        {
-                            "summary": cached_analysis.get("summary"),
-                            "key_topics": cached_analysis.get("key_topics", []),
-                            "most_relevant_segments": segments,
-                        }
-                    )
+                        relevant_parts = _SimpleResult(
+                            {
+                                "summary": cached_analysis.get("summary"),
+                                "key_topics": cached_analysis.get("key_topics", []),
+                                "most_relevant_segments": segments,
+                                "micro_hooks": cached_analysis.get("micro_hooks", []),
+                                "deep_context_clips": cached_analysis.get(
+                                    "deep_context_clips", []
+                                ),
+                            }
+                        )
                 except Exception:
                     relevant_parts = None
 

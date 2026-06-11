@@ -48,6 +48,27 @@ def test_parse_timestamp_to_seconds_range_returns_start():
     assert parse_timestamp_to_seconds("09 - 10") == 540.0
 
 
+def test_parse_segment_list_reads_flat_virality_fields():
+    raw = [
+        {
+            "start_time": "01:30",
+            "end_time": "02:00",
+            "text": "one two three four five",
+            "relevance_score": 0.9,
+            "hook_score": 22,
+            "engagement_score": 21,
+            "value_score": 18,
+            "shareability_score": 19,
+            "virality_score": 80,
+            "hook_type": "story",
+        }
+    ]
+    segments = _parse_segment_list(raw)
+    assert len(segments) == 1
+    assert segments[0].virality.hook_score == 22
+    assert segments[0].virality.total_score == 80
+
+
 def test_parse_segment_list_handles_range_start_time():
     raw = [
         {

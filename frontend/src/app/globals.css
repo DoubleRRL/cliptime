@@ -232,3 +232,112 @@
   0%, 100% { box-shadow: 0 -4px 30px oklch(0 0 0 / 0.35); }
   50% { box-shadow: 0 -4px 30px oklch(0 0 0 / 0.55); }
 }
+
+/* Savant Creator Console — warm Anthropic palette */
+.console-theme {
+  --console-charcoal: #1c1917;
+  --console-beige: #292524;
+  --console-beige-light: #f5f0eb;
+  --console-terracotta: #c15f3c;
+  --console-terracotta-muted: #a04d32;
+  --console-text: #faf7f4;
+  --console-text-muted: #a8a29e;
+  --console-border: rgba(250, 247, 244, 0.08);
+  --background: var(--console-charcoal);
+  --foreground: var(--console-text);
+  --card: var(--console-beige);
+  --primary: var(--console-terracotta);
+  --primary-foreground: #fff;
+  --muted: var(--console-beige);
+  --muted-foreground: var(--console-text-muted);
+  --border: var(--console-border);
+  --accent: var(--console-terracotta-muted);
+  --console-score-high-bg: rgba(74, 124, 89, 0.92);
+  --console-score-high-fg: #f0fdf4;
+  --console-score-mid-bg: rgba(180, 130, 40, 0.92);
+  --console-score-mid-fg: #fffbeb;
+  --console-score-low-bg: rgba(168, 77, 58, 0.92);
+  --console-score-low-fg: #fef2f2;
+  --console-duration-bg: rgba(28, 25, 23, 0.72);
+  --console-duration-fg: #faf7f4;
+  --console-rail-bg: #141210;
+  --console-rail-hover: rgba(250, 247, 244, 0.05);
+  --console-rail-active: rgba(193, 95, 60, 0.12);
+  --console-status-queued: #78716c;
+  --console-status-processing: #c15f3c;
+  --console-status-completed: #4a7c59;
+  --console-status-error: #a84d3a;
+  --console-clip-card-bg: #292524;
+  --console-clip-card-title-divider: rgba(250, 247, 244, 0.08);
+  --console-clip-card-border: rgba(250, 247, 244, 0.12);
+  --console-clip-card-border-hover: rgba(250, 247, 244, 0.22);
+  --console-action-panel-bg: #141210;
+}
+
+.light .console-theme {
+  --console-charcoal: #f5f0eb;
+  --console-beige: #ede8e3;
+  --console-text: #1c1917;
+  --console-text-muted: #78716c;
+  --console-border: rgba(28, 25, 23, 0.12);
+  --background: var(--console-charcoal);
+  --foreground: var(--console-text);
+  --card: var(--console-beige);
+  --muted: var(--console-beige);
+  --muted-foreground: var(--console-text-muted);
+  --border: var(--console-border);
+  --console-score-high-bg: rgba(74, 124, 89, 0.88);
+  --console-score-high-fg: #f0fdf4;
+  --console-score-mid-bg: rgba(180, 130, 40, 0.88);
+  --console-score-mid-fg: #fffbeb;
+  --console-score-low-bg: rgba(168, 77, 58, 0.88);
+  --console-score-low-fg: #fef2f2;
+  --console-duration-bg: rgba(28, 25, 23, 0.68);
+  --console-duration-fg: #faf7f4;
+  --console-rail-bg: #ede8e3;
+  --console-rail-hover: rgba(28, 25, 23, 0.04);
+  --console-rail-active: rgba(193, 95, 60, 0.1);
+  --console-clip-card-bg: #ffffff;
+  --console-clip-card-title-divider: rgba(28, 25, 23, 0.08);
+  --console-clip-card-border: rgba(28, 25, 23, 0.14);
+  --console-clip-card-border-hover: rgba(28, 25, 23, 0.24);
+  --console-action-panel-bg: #e8e3de;
+}
+
+.console-action-panel {
+  background: var(--console-action-panel-bg);
+}
+
+.console-rail-hover:hover {
+  background: var(--console-rail-hover);
+}
+
+.console-rail-active {
+  background: var(--console-rail-active);
+}
+
+.pixel-progress {
+  display: flex;
+  gap: 3px;
+}
+
+.pixel-progress span {
+  width: 8px;
+  height: 8px;
+  background: var(--console-border);
+  image-rendering: pixelated;
+}
+
+.pixel-progress span[data-active="true"] {
+  background: var(--console-terracotta);
+}
+
+.console-safe-zone {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 20%;
+  border-top: 1px dashed rgba(193, 95, 60, 0.45);
+  pointer-events: none;
+}

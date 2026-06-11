@@ -444,6 +444,76 @@ def _build_default_virality() -> ViralityAnalysis:
     )
 
 
+def _normalize_virality_dict(virality_data: dict) -> ViralityAnalysis:
+    """Coerce a virality dict (nested or flat) into ViralityAnalysis."""
+    hook_score = _safe_int(
+        virality_data.get("hook_score", 10), default=10, min_val=0, max_val=25
+    )
+    engagement_score = _safe_int(
+        virality_data.get("engagement_score", 10), default=10, min_val=0, max_val=25
+    )
+    value_score = _safe_int(
+        virality_data.get("value_score", 10), default=10, min_val=0, max_val=25
+    )
+    shareability_score = _safe_int(
+        virality_data.get("shareability_score", 10), default=10, min_val=0, max_val=25
+    )
+    calculated_total = (
+        hook_score + engagement_score + value_score + shareability_score
+    )
+    raw_total = virality_data.get("total_score", virality_data.get("virality_score"))
+    total_score = _safe_int(
+        raw_total if raw_total is not None else calculated_total,
+        default=calculated_total,
+        min_val=0,
+        max_val=100,
+    )
+    if total_score != calculated_total:
+        logger.info(
+            "Using model virality total %s (component sum %s)",
+            total_score,
+            calculated_total,
+        )
+
+    hook_type = virality_data.get("hook_type", "none")
+    if hook_type not in ("question", "statement", "statistic", "story", "contrast", "none"):
+        hook_type = "none"
+
+    return ViralityAnalysis(
+        hook_score=hook_score,
+        engagement_score=engagement_score,
+        value_score=value_score,
+        shareability_score=shareability_score,
+        total_score=total_score,
+        hook_type=hook_type,
+        virality_reasoning=str(
+            virality_data.get("virality_reasoning")
+            or virality_data.get("reasoning")
+            or "Parsed from model output"
+        ),
+    )
+
+
+def _virality_from_segment(seg: dict) -> ViralityAnalysis:
+    """Parse virality from nested object or flat segment-level score fields."""
+    virality_data = seg.get("virality") or seg.get("virality_analysis")
+    if isinstance(virality_data, dict):
+        return _normalize_virality_dict(virality_data)
+
+    flat_score_keys = (
+        "hook_score",
+        "engagement_score",
+        "value_score",
+        "shareability_score",
+        "total_score",
+        "virality_score",
+    )
+    if any(seg.get(key) is not None for key in flat_score_keys):
+        return _normalize_virality_dict(seg)
+
+    return _build_default_virality()
+
+
 def _parse_segment_list(raw_segments: list) -> List[TranscriptSegment]:
     """Parse a list of raw segments from JSON dicts, tolerating malformed items."""
     segments = []
@@ -458,32 +528,7 @@ def _parse_segment_list(raw_segments: list) -> List[TranscriptSegment]:
             reasoning = str(seg.get("reasoning") or seg.get("reason") or seg.get("explanation") or "Selected by AI")
             relevance = seg.get("relevance_score") or seg.get("relevance") or seg.get("score") or 0.5
 
-            virality_data = seg.get("virality") or seg.get("virality_analysis")
-            if isinstance(virality_data, dict):
-                virality_data["hook_score"] = _safe_int(
-                    virality_data.get("hook_score", 10), default=10, min_val=0, max_val=25
-                )
-                virality_data["engagement_score"] = _safe_int(
-                    virality_data.get("engagement_score", 10), default=10, min_val=0, max_val=25
-                )
-                virality_data["value_score"] = _safe_int(
-                    virality_data.get("value_score", 10), default=10, min_val=0, max_val=25
-                )
-                virality_data["shareability_score"] = _safe_int(
-                    virality_data.get("shareability_score", 10), default=10, min_val=0, max_val=25
-                )
-                virality_data["total_score"] = (
-                    virality_data["hook_score"] + virality_data["engagement_score"]
-                    + virality_data["value_score"] + virality_data["shareability_score"]
-                )
-                hook_type = virality_data.get("hook_type", "none")
-                if hook_type not in ("question", "statement", "statistic", "story", "contrast", "none"):
-                    hook_type = "none"
-                virality_data["hook_type"] = hook_type
-                virality_data.setdefault("virality_reasoning", "Parsed from model output")
-                virality = ViralityAnalysis(**virality_data)
-            else:
-                virality = _build_default_virality()
+            virality = _virality_from_segment(seg)
 
             segment = TranscriptSegment(
                 start_time=start_time,
@@ -1303,11 +1348,7 @@ def _parse_query_match_variant(
         return None
 
     start_time, end_time = _normalize_segment_times(start_time, end_time)
-    virality_raw = raw.get("virality") if isinstance(raw.get("virality"), dict) else {}
-    try:
-        virality = ViralityAnalysis(**virality_raw) if virality_raw else _build_default_virality()
-    except Exception:
-        virality = _build_default_virality()
+    virality = _virality_from_segment(raw)
 
     segment = TranscriptSegment(
         start_time=start_time,

@@ -19,6 +19,7 @@ interface CustomClipPanelProps {
   fontSize: number;
   fontColor: string;
   emptyState?: boolean;
+  variant?: "default" | "console";
   onClipReady?: (clip: Record<string, unknown>) => void;
   onGenerationComplete?: () => void;
 }
@@ -38,6 +39,7 @@ export function CustomClipPanel({
   fontSize,
   fontColor,
   emptyState = false,
+  variant = "default",
   onClipReady,
   onGenerationComplete,
 }: CustomClipPanelProps) {
@@ -50,6 +52,7 @@ export function CustomClipPanel({
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const canGenerate = query.trim().length > 0 && selectedTypes.length > 0 && state !== "generating";
+  const isConsole = variant === "console";
 
   const toggleType = (clipType: CustomClipType) => {
     setSelectedTypes((prev) =>
@@ -136,8 +139,14 @@ export function CustomClipPanel({
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-sm font-medium text-foreground mb-1">
-          {emptyState ? "Describe the clip you're looking for" : "Describe the moment"}
+        <p
+          className={
+            isConsole
+              ? "mb-1 text-sm font-medium text-[var(--console-text)]"
+              : "mb-1 text-sm font-medium text-foreground"
+          }
+        >
+          {emptyState ? "Find a moment in this video" : "Find another moment"}
         </p>
         <MotionShake shake={state === "error"}>
           <Textarea
@@ -146,7 +155,11 @@ export function CustomClipPanel({
             placeholder='e.g. "do we really need ass cheeks to walk?"'
             rows={3}
             disabled={state === "generating"}
-            className="resize-none text-sm"
+            className={
+              isConsole
+                ? "resize-none border-[var(--console-border)] bg-[var(--console-charcoal)] text-sm text-[var(--console-text)] placeholder:text-[var(--console-text-muted)]"
+                : "resize-none text-sm"
+            }
           />
         </MotionShake>
       </div>
@@ -156,16 +169,35 @@ export function CustomClipPanel({
           <motion.label
             key={format.value}
             whileTap={{ scale: 0.98 }}
-            className="flex items-start gap-3 rounded-lg border border-border/60 px-3 py-2 cursor-pointer"
+            className={
+              isConsole
+                ? "flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--console-border)] bg-[var(--console-charcoal)]/40 px-3 py-2"
+                : "flex cursor-pointer items-start gap-3 rounded-lg border border-border/60 px-3 py-2"
+            }
           >
             <Checkbox
               checked={selectedTypes.includes(format.value)}
               onCheckedChange={() => toggleType(format.value)}
               disabled={state === "generating"}
+              className={isConsole ? "border-[var(--console-border)]" : undefined}
             />
             <span className="text-sm leading-tight">
-              <span className="font-medium text-foreground">{format.label}</span>
-              <span className="block text-xs text-muted-foreground">{format.helper}</span>
+              <span
+                className={
+                  isConsole ? "font-medium text-[var(--console-text)]" : "font-medium text-foreground"
+                }
+              >
+                {format.label}
+              </span>
+              <span
+                className={
+                  isConsole
+                    ? "block text-xs text-[var(--console-text-muted)]"
+                    : "block text-xs text-muted-foreground"
+                }
+              >
+                {format.helper}
+              </span>
             </span>
           </motion.label>
         ))}
@@ -177,7 +209,15 @@ export function CustomClipPanel({
         </Alert>
       )}
 
-      <Button className="w-full" disabled={!canGenerate} onClick={handleGenerate}>
+      <Button
+        className={
+          isConsole
+            ? "w-full bg-[var(--console-terracotta)] hover:bg-[var(--console-terracotta-muted)]"
+            : "w-full"
+        }
+        disabled={!canGenerate}
+        onClick={handleGenerate}
+      >
         {state === "generating" ? (
           <>
             <CornerOrbitLoader className="mr-2" />
@@ -203,7 +243,13 @@ export function CustomClipPanel({
       </Button>
 
       {state === "generating" && expectedCount > 0 && (
-        <p className="text-xs text-center text-muted-foreground">
+        <p
+          className={
+            isConsole
+              ? "text-center text-xs text-[var(--console-text-muted)]"
+              : "text-center text-xs text-muted-foreground"
+          }
+        >
           Rendering {expectedCount} clip{expectedCount === 1 ? "" : "s"}…
         </p>
       )}
