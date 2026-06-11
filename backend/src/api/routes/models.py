@@ -251,7 +251,12 @@ async def _system_specs() -> Dict[str, Any]:
     ollama_specs = await _fetch_ollama_system_info()
     if ollama_specs:
         return ollama_specs
-    return _psutil_system_specs()
+    specs = _psutil_system_specs()
+    config = get_config()
+    if config.host_total_ram_gb:
+        specs["total_ram_gb"] = config.host_total_ram_gb
+        specs["spec_source"] = "configured"
+    return specs
 
 
 def _fit_for_system(min_ram_gb: float, total_ram_gb: float) -> str:

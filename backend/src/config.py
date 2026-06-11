@@ -95,6 +95,10 @@ class Config:
         self.parallel_clip_renders = max(
             1, int(os.getenv("PARALLEL_CLIP_RENDERS", "2"))
         )
+        # Host machine RAM for model recommendations when Ollama /api/info is unavailable
+        # (common in Docker, where psutil reports container memory instead).
+        host_ram = self._get_optional_env("HOST_TOTAL_RAM_GB")
+        self.host_total_ram_gb = float(host_ram) if host_ram else None
 
     @staticmethod
     def _get_optional_env(name: str):
