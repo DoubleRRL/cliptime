@@ -1,5 +1,5 @@
 -- Migration: Add progress tracking fields to tasks table.
--- Note: each statement must be self-contained (the runner splits on ';').
+-- Note: each statement must be self-contained (runner splits on semicolons).
 
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100);
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS progress_message TEXT;
