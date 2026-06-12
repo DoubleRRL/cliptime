@@ -91,6 +91,12 @@ class Config:
         self.micro_per_window = int(os.getenv("MICRO_PER_WINDOW", "3"))
         self.deep_per_window = int(os.getenv("DEEP_PER_WINDOW", "2"))
         self.ollama_num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "4096"))
+        self.signal_first_analysis = self._get_bool_env("SIGNAL_FIRST_ANALYSIS", False)
+        self.assemblyai_sentiment_entities = self._get_bool_env(
+            "ASSEMBLYAI_SENTIMENT_ENTITIES", False
+        )
+        self.signal_patch_pad_seconds = int(os.getenv("SIGNAL_PATCH_PAD_SECONDS", "45"))
+        self.signal_patch_max_chars = int(os.getenv("SIGNAL_PATCH_MAX_CHARS", "1500"))
         # Number of clips rendered concurrently per task
         self.parallel_clip_renders = max(
             1, int(os.getenv("PARALLEL_CLIP_RENDERS", "2"))

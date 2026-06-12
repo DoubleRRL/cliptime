@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { ConsoleShell } from "@/components/console/console-shell";
 import type { ConsoleSession, ConsoleClip, ConsoleSessionSettings } from "@/components/console/types";
 import { useTaskProgress } from "@/hooks/use-task-progress";
@@ -24,6 +25,10 @@ function mapTaskToSession(task: Record<string, unknown>): ConsoleSession {
     createdAt: String(task.created_at || ""),
     progress: Number.isFinite(progress) ? progress : undefined,
     progressMessage: String(task.progress_message || ""),
+    llmModel:
+      task.llm_model != null && task.llm_model !== ""
+        ? String(task.llm_model)
+        : null,
   };
 }
 
@@ -175,6 +180,37 @@ export function ConsoleApp() {
     setActiveSessionId(sessionId);
   }, []);
 
+  const handleDeleteSession = useCallback(
+    async (sessionId: string) => {
+      const response = await fetch(`/api/tasks/${sessionId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const detail =
+          response.status === 403
+            ? "Not authorized to delete this session"
+            : response.status === 404
+              ? "Session not found"
+              : "Failed to delete session";
+        toast.error(detail);
+        return;
+      }
+
+      setSessions((previous) => {
+        const remaining = previous.filter((session) => session.id !== sessionId);
+        setActiveSessionId((current) => {
+          if (current !== sessionId) return current;
+          if (current === sessionId) {
+            setClips([]);
+            setSessionSettings(null);
+          }
+          return remaining[0]?.id ?? null;
+        });
+        return remaining;
+      });
+      toast.success("Session deleted");
+    },
+    [],
+  );
+
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
@@ -209,6 +245,7 @@ export function ConsoleApp() {
         setActiveSessionId(sessionId);
         void loadSessions();
       }}
+      onDeleteSession={(sessionId) => void handleDeleteSession(sessionId)}
       onClipReady={handleClipReady}
       onClipUpdated={handleClipUpdated}
       onClipCreated={handleClipCreated}

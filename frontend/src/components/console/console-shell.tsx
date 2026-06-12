@@ -23,6 +23,7 @@ type ConsoleShellProps = {
   progress: TaskProgressState;
   onRefresh: () => void;
   onSessionCreated: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   onClipReady?: (clip: Record<string, unknown>) => void;
   onClipUpdated: (clip: ConsoleClip) => void;
   onClipCreated: (clip: ConsoleClip) => void;
@@ -39,6 +40,7 @@ export function ConsoleShell({
   progress,
   onRefresh,
   onSessionCreated,
+  onDeleteSession,
   onClipReady,
   onClipUpdated,
   onClipCreated,
@@ -86,7 +88,7 @@ export function ConsoleShell({
             href="/"
             className="font-display text-base font-semibold tracking-tight text-[var(--console-text)] transition-opacity hover:opacity-80"
           >
-            SupoClip
+            Cliptime
           </Link>
         </div>
         <div className="flex items-center gap-1">
@@ -127,6 +129,7 @@ export function ConsoleShell({
           loading={loading}
           onRefresh={onRefresh}
           onSessionCreated={onSessionCreated}
+          onDeleteSession={onDeleteSession}
           onSelectClip={handleSelectClip}
         />
 

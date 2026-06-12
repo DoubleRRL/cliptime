@@ -5,7 +5,9 @@ import pytest
 from src.ai import (
     TranscriptSegment,
     ViralityAnalysis,
+    _estimate_virality_from_segment,
     _parse_segment_list,
+    _virality_from_segment,
     rerank_candidates,
 )
 from src.timestamp_parse import (
@@ -46,6 +48,38 @@ def test_resolve_segment_timestamps_combined_range():
 
 def test_parse_timestamp_to_seconds_range_returns_start():
     assert parse_timestamp_to_seconds("09 - 10") == 540.0
+
+
+def test_virality_from_segment_estimates_when_model_omits_scores():
+    seg = {
+        "start_time": "01:00",
+        "end_time": "01:18",
+        "text": "Why does this framework change everything for creators?",
+        "relevance_score": 0.92,
+        "reasoning": "Strong curiosity hook",
+    }
+    virality = _virality_from_segment(seg)
+    assert virality.total_score != 40
+    assert virality.hook_score > 12
+    assert virality.hook_type == "question"
+
+
+def test_estimate_virality_differs_by_relevance_and_signal():
+    high = _estimate_virality_from_segment(
+        {
+            "text": "Why does this secret actually matter for creators in 2026?",
+            "relevance_score": 0.95,
+        }
+    )
+    low = _estimate_virality_from_segment(
+        {
+            "text": "Um, like, you know, it is kind of fine I guess.",
+            "relevance_score": 0.55,
+        }
+    )
+    assert high.total_score > low.total_score
+    assert high.total_score != 40
+    assert low.total_score != 40
 
 
 def test_parse_segment_list_reads_flat_virality_fields():

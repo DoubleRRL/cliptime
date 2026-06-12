@@ -210,8 +210,8 @@ def test_is_catalog_model_installed_matches_aliases():
 @pytest.mark.parametrize(
     ("total_ram_gb", "expected_best_tag", "heavy_fit"),
     [
-        (8.0, "gemma4:e2b", "not_recommended"),
-        (16.0, "gemma4:e4b", "not_recommended"),
+        (8.0, "qwen3:4b", "not_recommended"),
+        (16.0, "qwen3:8b", "not_recommended"),
         (32.0, "gemma4:31b", "ok"),
     ],
 )
@@ -271,7 +271,7 @@ async def test_recommendations_mark_installed_and_pick_best(
     assert by_tag["llama3.1:8b"]["installed"] is True
     assert by_tag["llama3.2:3b"]["fit"] == "great"
     assert by_tag["gemma4:31b"]["fit"] == "not_recommended"
-    assert result["best_pick"] == "ollama:gemma4:e4b"
+    assert result["best_pick"] == "ollama:qwen3:8b"
     assert result["ollama_available"] is True
 
 

@@ -386,7 +386,12 @@ export default function SettingsPage() {
                 <Label className="text-sm font-medium text-foreground">
                   Default AI Model
                 </Label>
-                <ModelSelector value={llmModel} onChange={setLlmModel} disabled={isLoading} />
+                <ModelSelector
+                  variant="inline"
+                  value={llmModel}
+                  onChange={setLlmModel}
+                  disabled={isLoading}
+                />
                 <p className="text-xs text-muted-foreground">
                   Used for clip selection on new sessions. Install recommended models with one click —
                   you can still override this per session.

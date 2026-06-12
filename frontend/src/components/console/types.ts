@@ -13,6 +13,7 @@ export type ConsoleSession = {
   createdAt: string;
   progress?: number;
   progressMessage?: string;
+  llmModel?: string | null;
 };
 
 export type ConsoleClip = {

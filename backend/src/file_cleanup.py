@@ -27,3 +27,17 @@ def delete_clip_files(clips: list[dict]) -> int:
         if file_path and safe_unlink(file_path):
             removed += 1
     return removed
+
+
+def delete_upload_source_files(video_path: str | Path) -> int:
+    """Remove an uploaded video and its transcript/speaker sidecar caches."""
+    target = Path(video_path)
+    removed = 0
+    for path in (
+        target,
+        target.with_suffix(".transcript_cache.json"),
+        target.with_suffix(".speaker_panel_cache.json"),
+    ):
+        if safe_unlink(path):
+            removed += 1
+    return removed

@@ -130,16 +130,16 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     >
       <SheetContent
         side="left"
-        className="console-theme w-full border-[var(--console-border)] bg-[var(--console-beige)] text-[var(--console-text)] sm:max-w-md"
+        className="console-theme top-12 h-[calc(100dvh-3rem)] w-full min-h-0 overflow-hidden border-[var(--console-border)] bg-[var(--console-beige)] text-[var(--console-text)] sm:max-w-md"
       >
-        <SheetHeader>
+        <SheetHeader className="pl-1">
           <SheetTitle className="text-[var(--console-text)]">New session</SheetTitle>
           <SheetDescription className="text-[var(--console-text-muted)]">
             Paste a YouTube link or upload a video file to start clipping.
           </SheetDescription>
         </SheetHeader>
 
-        <div className="space-y-4 px-1">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1">
           <Input
             value={url}
             onChange={(event) => setUrl(event.target.value)}
@@ -172,7 +172,12 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
 
           <div className="space-y-1.5">
             <Label className="text-xs text-[var(--console-text-muted)]">AI model</Label>
-            <ModelSelector value={llmModel} onChange={setLlmModel} disabled={isSubmitting} />
+            <ModelSelector
+              variant="inline"
+              value={llmModel}
+              onChange={setLlmModel}
+              disabled={isSubmitting}
+            />
           </div>
 
           {error && <p className="text-sm text-red-400">{error}</p>}

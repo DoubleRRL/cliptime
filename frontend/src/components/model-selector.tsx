@@ -70,6 +70,7 @@ type ModelSelectorProps = {
   onChange: (model: string | null) => void;
   disabled?: boolean;
   className?: string;
+  variant?: "popover" | "inline";
 };
 
 const FIT_LABELS: Record<ModelRecommendation["fit"], { label: string; className: string }> = {
@@ -92,7 +93,292 @@ function platformLabel(specs: SystemSpecs): string | null {
   return null;
 }
 
-export function ModelSelector({ value, onChange, disabled, className }: ModelSelectorProps) {
+type ModelListProps = {
+  loading: boolean;
+  value: string | null;
+  system: SystemSpecs | null;
+  recsError: string | null;
+  recommendations: ModelRecommendation[];
+  bestPick: string | null;
+  pull: PullState | null;
+  ollamaAvailable: boolean;
+  defaultModel: string;
+  otherInstalled: InstalledModel[];
+  cloudModels: CloudModel[];
+  disabled?: boolean;
+  onReload: () => void;
+  onSelect: (model: string | null) => void;
+  onInstall: (model: string) => void;
+};
+
+function ModelList({
+  loading,
+  value,
+  system,
+  recsError,
+  recommendations,
+  bestPick,
+  pull,
+  ollamaAvailable,
+  defaultModel,
+  otherInstalled,
+  cloudModels,
+  disabled,
+  onReload,
+  onSelect,
+  onInstall,
+}: ModelListProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Checking your models…
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {system && (
+        <div className="mb-1 rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="flex items-center gap-1">
+              <Cpu className="h-3 w-3" /> {system.cpu_count} cores
+            </span>
+            <span className="flex items-center gap-1">
+              <HardDrive className="h-3 w-3" /> {system.total_ram_gb} GB RAM
+            </span>
+            {platformLabel(system) && <span>{platformLabel(system)}</span>}
+            {system.has_gpu && system.gpu_name && (
+              <span className="break-words" title={system.gpu_name}>
+                GPU · {system.gpu_name}
+                {system.gpu_vram_gb != null ? ` (${system.gpu_vram_gb} GB)` : ""}
+              </span>
+            )}
+          </div>
+          {system.spec_source === "ollama" && (
+            <p className="mt-1 text-[10px]">Specs from Ollama host</p>
+          )}
+        </div>
+      )}
+
+      {recsError ? (
+        <div className="mb-1 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive">
+          <p>{recsError}</p>
+          <button
+            type="button"
+            onClick={onReload}
+            className="mt-1.5 flex items-center gap-1 underline underline-offset-2 hover:no-underline"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Retry
+          </button>
+        </div>
+      ) : recommendations.length > 0 ? (
+        <>
+          <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Recommended for your system
+          </p>
+          {recommendations.map((rec) => {
+            const fit = FIT_LABELS[rec.fit];
+            const isSelected = value === rec.model;
+            const isTopPick = bestPick === rec.model;
+            const isPulling = pull?.model === rec.model;
+            const pullFailed = isPulling && pull?.status === "error";
+            const installDisabled =
+              disabled ||
+              !ollamaAvailable ||
+              rec.fit === "not_recommended" ||
+              Boolean(pull && !pullFailed);
+
+            return (
+              <div
+                key={rec.model}
+                role="button"
+                tabIndex={disabled ? -1 : 0}
+                onClick={() => !disabled && onSelect(rec.model)}
+                onKeyDown={(event) => {
+                  if (disabled) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onSelect(rec.model);
+                  }
+                }}
+                className={cn(
+                  "cursor-pointer rounded-md px-2.5 py-2 transition-colors",
+                  disabled && "cursor-not-allowed opacity-60",
+                  isSelected ? "bg-accent" : "hover:bg-accent/50",
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-left text-sm">
+                    <span className="font-medium break-words">{rec.display_name}</span>
+                    {isTopPick && (
+                      <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                        <Sparkles className="h-3 w-3" />
+                        Top pick
+                      </span>
+                    )}
+                    {isSelected && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                  </div>
+                  {rec.installed ? (
+                    <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">
+                      Installed
+                    </Badge>
+                  ) : isPulling && !pullFailed ? (
+                    <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      {pull?.percent != null ? `${Math.round(pull.percent)}%` : pull?.status}
+                    </span>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-6 shrink-0 gap-1 px-2 text-[11px]"
+                      disabled={installDisabled}
+                      title={
+                        !ollamaAvailable
+                          ? "Start Ollama to install"
+                          : rec.fit === "not_recommended"
+                            ? "Not enough RAM for this model"
+                            : undefined
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void onInstall(rec.model);
+                      }}
+                    >
+                      <Download className="h-3 w-3" />
+                      Install
+                    </Button>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <Badge variant="secondary" className={cn("h-4 px-1.5 text-[10px]", fit.className)}>
+                    {fit.label}
+                  </Badge>
+                  <span className="text-[11px] text-muted-foreground">
+                    {rec.download_gb} GB · ~{rec.min_ram_gb} GB RAM · {rec.speed}
+                  </span>
+                </div>
+                {isPulling && !pullFailed && pull?.percent != null && (
+                  <Progress value={pull.percent} className="mt-1.5 h-1" />
+                )}
+                {pullFailed && (
+                  <p className="mt-1 text-[11px] text-red-500">{pull?.error}</p>
+                )}
+                <p className="mt-1 text-[11px] leading-snug break-words text-muted-foreground">
+                  {rec.description}
+                </p>
+              </div>
+            );
+          })}
+        </>
+      ) : (
+        <div className="mb-1 px-2.5 py-2 text-xs text-muted-foreground">
+          No recommendations available.{" "}
+          <a
+            href="https://ollama.com/download"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            Install Ollama
+          </a>{" "}
+          (0.20+ for Gemma 4).
+        </div>
+      )}
+
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onSelect(null)}
+        className="mt-1 flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <span>
+          <span className="font-medium">Default</span>
+          {defaultModel && (
+            <span className="ml-1.5 text-xs text-muted-foreground">
+              {shortModelLabel(defaultModel)}
+            </span>
+          )}
+        </span>
+        {!value && <Check className="h-4 w-4 text-primary" />}
+      </button>
+
+      {(otherInstalled.length > 0 || !ollamaAvailable) && (
+        <>
+          <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Other installed
+          </p>
+          {!ollamaAvailable && (
+            <p className="px-2.5 pb-2 text-xs text-muted-foreground">
+              Ollama isn&apos;t reachable.{" "}
+              <a
+                href="https://ollama.com/download"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Install Ollama
+              </a>
+              , then run <code className="text-[10px]">ollama serve</code>.
+            </p>
+          )}
+          {otherInstalled.map((entry) => (
+            <button
+              key={entry.model}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelect(entry.model)}
+              className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+                <span className="break-words">{entry.name}</span>
+                <span className="shrink-0 text-[11px] text-muted-foreground">
+                  {entry.size_gb} GB
+                </span>
+              </span>
+              {value === entry.model && <Check className="h-4 w-4 shrink-0 text-primary" />}
+            </button>
+          ))}
+        </>
+      )}
+
+      {cloudModels.length > 0 && (
+        <>
+          <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Cloud
+          </p>
+          {cloudModels.map((cloud) => (
+            <button
+              key={cloud.model}
+              type="button"
+              disabled={disabled}
+              onClick={() => onSelect(cloud.model)}
+              className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="flex items-center gap-2">
+                <Cloud className="h-3.5 w-3.5 opacity-50" />
+                {cloud.display_name}
+              </span>
+              {value === cloud.model && <Check className="h-4 w-4 text-primary" />}
+            </button>
+          ))}
+        </>
+      )}
+    </>
+  );
+}
+
+export function ModelSelector({
+  value,
+  onChange,
+  disabled,
+  className,
+  variant = "popover",
+}: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [installed, setInstalled] = useState<InstalledModel[]>([]);
@@ -233,13 +519,41 @@ export function ModelSelector({ value, onChange, disabled, className }: ModelSel
     return "Default model";
   }, [value, defaultModel, bestPick, recommendations]);
 
-  const selectModel = useCallback(
-    (model: string) => {
+  const handleSelect = useCallback(
+    (model: string | null) => {
       onChange(model);
       setOpen(false);
     },
     [onChange],
   );
+
+  const listProps: ModelListProps = {
+    loading,
+    value,
+    system,
+    recsError,
+    recommendations,
+    bestPick,
+    pull,
+    ollamaAvailable,
+    defaultModel,
+    otherInstalled,
+    cloudModels,
+    disabled,
+    onReload: () => void loadModels(),
+    onSelect: handleSelect,
+    onInstall: installModel,
+  };
+
+  if (variant === "inline") {
+    return (
+      <div className={cn("space-y-1.5", className)}>
+        <div className="max-h-64 overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1.5">
+          <ModelList {...listProps} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("space-y-1.5", className)}>
@@ -258,235 +572,14 @@ export function ModelSelector({ value, onChange, disabled, className }: ModelSel
             <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-40" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-[340px] p-0" sideOffset={6}>
-          <div className="max-h-[420px] overflow-y-auto p-1.5">
-            {loading ? (
-              <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Checking your models…
-              </div>
-            ) : (
-              <>
-                {system && (
-                  <div className="mb-1 rounded-md bg-muted/60 px-2.5 py-2 text-[11px] text-muted-foreground">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="flex items-center gap-1">
-                        <Cpu className="h-3 w-3" /> {system.cpu_count} cores
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <HardDrive className="h-3 w-3" /> {system.total_ram_gb} GB RAM
-                      </span>
-                      {platformLabel(system) && <span>{platformLabel(system)}</span>}
-                      {system.has_gpu && system.gpu_name && (
-                        <span className="truncate" title={system.gpu_name}>
-                          GPU · {system.gpu_name}
-                          {system.gpu_vram_gb != null ? ` (${system.gpu_vram_gb} GB)` : ""}
-                        </span>
-                      )}
-                    </div>
-                    {system.spec_source === "ollama" && (
-                      <p className="mt-1 text-[10px]">Specs from Ollama host</p>
-                    )}
-                  </div>
-                )}
-
-                {recsError ? (
-                  <div className="mb-1 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2 text-xs text-destructive">
-                    <p>{recsError}</p>
-                    <button
-                      type="button"
-                      onClick={() => void loadModels()}
-                      className="mt-1.5 flex items-center gap-1 underline underline-offset-2 hover:no-underline"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      Retry
-                    </button>
-                  </div>
-                ) : recommendations.length > 0 ? (
-                  <>
-                    <p className="px-2.5 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Recommended for your system
-                    </p>
-                    {recommendations.map((rec) => {
-                      const fit = FIT_LABELS[rec.fit];
-                      const isSelected = value === rec.model;
-                      const isTopPick = bestPick === rec.model;
-                      const isPulling = pull?.model === rec.model;
-                      const pullFailed = isPulling && pull?.status === "error";
-                      const installDisabled =
-                        !ollamaAvailable ||
-                        rec.fit === "not_recommended" ||
-                        Boolean(pull && !pullFailed);
-                      return (
-                        <div
-                          key={rec.model}
-                          className={cn(
-                            "rounded-md px-2.5 py-2 transition-colors",
-                            isSelected ? "bg-accent" : "hover:bg-accent/50",
-                          )}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <button
-                              type="button"
-                              onClick={() => selectModel(rec.model)}
-                              className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-sm"
-                            >
-                              <span className="truncate font-medium">{rec.display_name}</span>
-                              {isTopPick && (
-                                <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-                                  <Sparkles className="h-3 w-3" />
-                                  Top pick
-                                </span>
-                              )}
-                              {isSelected && <Check className="h-4 w-4 shrink-0 text-primary" />}
-                            </button>
-                            {rec.installed ? (
-                              <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">
-                                Installed
-                              </Badge>
-                            ) : isPulling && !pullFailed ? (
-                              <span className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                {pull?.percent != null ? `${Math.round(pull.percent)}%` : pull?.status}
-                              </span>
-                            ) : (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                className="h-6 shrink-0 gap-1 px-2 text-[11px]"
-                                disabled={installDisabled}
-                                title={
-                                  !ollamaAvailable
-                                    ? "Start Ollama to install"
-                                    : rec.fit === "not_recommended"
-                                      ? "Not enough RAM for this model"
-                                      : undefined
-                                }
-                                onClick={() => void installModel(rec.model)}
-                              >
-                                <Download className="h-3 w-3" />
-                                Install
-                              </Button>
-                            )}
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                            <Badge variant="secondary" className={cn("h-4 px-1.5 text-[10px]", fit.className)}>
-                              {fit.label}
-                            </Badge>
-                            <span className="text-[11px] text-muted-foreground">
-                              {rec.download_gb} GB · ~{rec.min_ram_gb} GB RAM · {rec.speed}
-                            </span>
-                          </div>
-                          {isPulling && !pullFailed && pull?.percent != null && (
-                            <Progress value={pull.percent} className="mt-1.5 h-1" />
-                          )}
-                          {pullFailed && (
-                            <p className="mt-1 text-[11px] text-red-500">{pull?.error}</p>
-                          )}
-                          <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                            {rec.description}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </>
-                ) : (
-                  <div className="mb-1 px-2.5 py-2 text-xs text-muted-foreground">
-                    No recommendations available.{" "}
-                    <a
-                      href="https://ollama.com/download"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline underline-offset-2 hover:text-foreground"
-                    >
-                      Install Ollama
-                    </a>{" "}
-                    (0.20+ for Gemma 4).
-                  </div>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    onChange(null);
-                    setOpen(false);
-                  }}
-                  className="mt-1 flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent"
-                >
-                  <span>
-                    <span className="font-medium">Default</span>
-                    {defaultModel && (
-                      <span className="ml-1.5 text-xs text-muted-foreground">
-                        {shortModelLabel(defaultModel)}
-                      </span>
-                    )}
-                  </span>
-                  {!value && <Check className="h-4 w-4 text-primary" />}
-                </button>
-
-                {(otherInstalled.length > 0 || !ollamaAvailable) && (
-                  <>
-                    <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Other installed
-                    </p>
-                    {!ollamaAvailable && (
-                      <p className="px-2.5 pb-2 text-xs text-muted-foreground">
-                        Ollama isn&apos;t reachable.{" "}
-                        <a
-                          href="https://ollama.com/download"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline underline-offset-2 hover:text-foreground"
-                        >
-                          Install Ollama
-                        </a>
-                        , then run <code className="text-[10px]">ollama serve</code>.
-                      </p>
-                    )}
-                    {otherInstalled.map((entry) => (
-                      <button
-                        key={entry.model}
-                        type="button"
-                        onClick={() => selectModel(entry.model)}
-                        className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="truncate">{entry.name}</span>
-                          <span className="shrink-0 text-[11px] text-muted-foreground">
-                            {entry.size_gb} GB
-                          </span>
-                        </span>
-                        {value === entry.model && <Check className="h-4 w-4 shrink-0 text-primary" />}
-                      </button>
-                    ))}
-                  </>
-                )}
-
-                {cloudModels.length > 0 && (
-                  <>
-                    <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Cloud
-                    </p>
-                    {cloudModels.map((cloud) => (
-                      <button
-                        key={cloud.model}
-                        type="button"
-                        onClick={() => selectModel(cloud.model)}
-                        className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent"
-                      >
-                        <span className="flex items-center gap-2">
-                          <Cloud className="h-3.5 w-3.5 opacity-50" />
-                          {cloud.display_name}
-                        </span>
-                        {value === cloud.model && <Check className="h-4 w-4 text-primary" />}
-                      </button>
-                    ))}
-                  </>
-                )}
-              </>
-            )}
-          </div>
+        <PopoverContent
+          align="start"
+          side="bottom"
+          collisionPadding={16}
+          className="z-[100] w-[min(340px,calc(100vw-2rem))] max-h-[min(70vh,420px,var(--radix-popover-content-available-height))] overflow-y-auto overscroll-contain p-1.5"
+          sideOffset={6}
+        >
+          <ModelList {...listProps} />
         </PopoverContent>
       </Popover>
     </div>

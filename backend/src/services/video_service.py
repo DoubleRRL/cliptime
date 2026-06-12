@@ -22,6 +22,7 @@ from ..video_utils import (
     create_clips_with_transitions,
     create_optimized_clip,
     encoding_quality_for_mode,
+    load_cached_transcript_data,
     parse_timestamp_to_seconds,
 )
 from ..ai import get_most_relevant_parts_by_transcript
@@ -142,6 +143,7 @@ class VideoService:
         transcript: str,
         processing_mode: str = "quality",
         progress_callback: Optional[Callable[[int, str, str], Awaitable[None]]] = None,
+        transcript_cache: Optional[Dict[str, Any]] = None,
     ) -> Any:
         """
         Analyze transcript with AI to find relevant segments.
@@ -152,6 +154,7 @@ class VideoService:
             transcript,
             processing_mode=processing_mode,
             progress_callback=progress_callback,
+            transcript_cache=transcript_cache,
         )
         logger.info(
             f"AI analysis complete: {len(relevant_parts.most_relevant_segments)} segments found"
@@ -246,6 +249,44 @@ class VideoService:
         logger.info(f"Successfully created {len(clips_info)} clips")
         return clips_info
 
+    MICRO_HOOK_MAX_SECONDS = 30
+    DEEP_CONTEXT_MAX_SECONDS = 90
+
+    @staticmethod
+    def clamp_segment_timestamps(segment: Dict[str, Any]) -> Dict[str, Any]:
+        """Enforce tier duration limits before rendering."""
+        from ..timestamp_parse import seconds_to_mmss
+
+        start_seconds = parse_timestamp_to_seconds(segment["start_time"])
+        end_seconds = parse_timestamp_to_seconds(segment["end_time"])
+        duration = end_seconds - start_seconds
+        if duration <= 0:
+            return segment
+
+        clip_type = segment.get("clip_type")
+        if clip_type == "micro_hook":
+            max_duration = VideoService.MICRO_HOOK_MAX_SECONDS
+        elif clip_type == "deep_context":
+            max_duration = VideoService.DEEP_CONTEXT_MAX_SECONDS
+        else:
+            max_duration = VideoService.DEEP_CONTEXT_MAX_SECONDS
+
+        if duration <= max_duration:
+            return segment
+
+        clamped_end = start_seconds + max_duration
+        logger.warning(
+            "Clamping clip span %s-%s from %.1fs to %.1fs (tier=%s)",
+            segment["start_time"],
+            segment["end_time"],
+            duration,
+            max_duration,
+            clip_type or "unknown",
+        )
+        clamped = dict(segment)
+        clamped["end_time"] = seconds_to_mmss(int(clamped_end))
+        return clamped
+
     @staticmethod
     async def create_single_clip(
         video_path: Path,
@@ -264,6 +305,7 @@ class VideoService:
     ) -> Optional[Dict[str, Any]]:
         """Render a single clip in the thread pool and return clip_info dict, or None on failure."""
         try:
+            segment = VideoService.clamp_segment_timestamps(segment)
             start_seconds = parse_timestamp_to_seconds(segment["start_time"])
             end_seconds = parse_timestamp_to_seconds(segment["end_time"])
             duration = end_seconds - start_seconds
@@ -473,10 +515,12 @@ class VideoService:
                     relevant_parts = None
 
             if relevant_parts is None:
+                transcript_cache = load_cached_transcript_data(video_path)
                 relevant_parts = await VideoService.analyze_transcript(
                     transcript,
                     processing_mode=processing_mode,
                     progress_callback=progress_callback,
+                    transcript_cache=transcript_cache,
                 )
 
             # Step 4: Create clips
@@ -490,10 +534,20 @@ class VideoService:
                     "processing",
                 )
 
-            raw_segments = relevant_parts.most_relevant_segments
-            segments_json: List[Dict[str, Any]] = [
-                VideoService.segment_to_dict(segment) for segment in raw_segments
-            ]
+            segments_json: List[Dict[str, Any]] = []
+            for segment in getattr(relevant_parts, "micro_hooks", []) or []:
+                entry = VideoService.segment_to_dict(segment)
+                entry["clip_type"] = "micro_hook"
+                segments_json.append(entry)
+            for segment in getattr(relevant_parts, "deep_context_clips", []) or []:
+                entry = VideoService.segment_to_dict(segment)
+                entry["clip_type"] = "deep_context"
+                segments_json.append(entry)
+            if not segments_json:
+                segments_json = [
+                    VideoService.segment_to_dict(segment)
+                    for segment in relevant_parts.most_relevant_segments
+                ]
 
             segments_json = VideoService.apply_ranked_relevance_scores(segments_json)
             segments_json = VideoService.cap_segments_for_mode(

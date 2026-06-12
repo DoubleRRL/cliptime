@@ -302,6 +302,7 @@ class TaskRepository:
                     "progress": getattr(row, "progress", None),
                     "progress_message": getattr(row, "progress_message", None),
                     "processing_mode": getattr(row, "processing_mode", "fast"),
+                    "llm_model": getattr(row, "llm_model", None),
                     "clips_count": row.clips_count,
                     "created_at": row.created_at,
                     "updated_at": row.updated_at,
@@ -309,6 +310,32 @@ class TaskRepository:
             )
 
         return tasks
+
+    @staticmethod
+    async def count_tasks_by_source_id(
+        db: AsyncSession, source_id: str, *, exclude_task_id: Optional[str] = None
+    ) -> int:
+        """Count tasks referencing a source, optionally excluding one task."""
+        if exclude_task_id:
+            result = await db.execute(
+                text(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM tasks
+                    WHERE source_id = :source_id AND id != :exclude_task_id
+                    """
+                ),
+                {"source_id": source_id, "exclude_task_id": exclude_task_id},
+            )
+        else:
+            result = await db.execute(
+                text(
+                    "SELECT COUNT(*) AS count FROM tasks WHERE source_id = :source_id"
+                ),
+                {"source_id": source_id},
+            )
+        row = result.fetchone()
+        return int(row.count) if row else 0
 
     @staticmethod
     async def user_exists(db: AsyncSession, user_id: str) -> bool:

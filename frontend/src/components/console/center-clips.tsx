@@ -16,6 +16,7 @@ import type { TaskProgressState } from "@/hooks/use-task-progress";
 import { Progress } from "@/components/ui/progress";
 import { CornerOrbitLoader } from "@/components/corner-orbit-loader";
 import { fadeUp, staggerChildren } from "@/lib/motion";
+import { formatLlmModel } from "@/lib/format-llm-model";
 
 type CenterClipsProps = {
   className?: string;
@@ -98,6 +99,7 @@ export function CenterClips({
   const fontFamily = sessionSettings?.fontFamily ?? "TikTokSans-Regular";
   const fontSize = sessionSettings?.fontSize ?? 28;
   const fontColor = sessionSettings?.fontColor ?? "#FFFFFF";
+  const modelLabel = formatLlmModel(session?.llmModel);
 
   return (
     <main className={cn("flex min-h-0 flex-col bg-[var(--console-charcoal)]", className)}>
@@ -113,6 +115,8 @@ export function CenterClips({
               </span>
               {" · "}
               {clips.length} clip{clips.length === 1 ? "" : "s"}
+              {" · "}
+              {modelLabel}
             </p>
           </div>
           {clips.length > 0 && <ClipGridZoom zoom={zoom} onZoomChange={setZoom} />}

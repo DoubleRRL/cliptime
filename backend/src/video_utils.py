@@ -30,7 +30,7 @@ apply_assemblyai_api_patch()
 
 logger = logging.getLogger(__name__)
 config = Config()
-TRANSCRIPT_CACHE_SCHEMA_VERSION = 2
+TRANSCRIPT_CACHE_SCHEMA_VERSION = 3
 
 
 class VideoProcessor:
@@ -125,6 +125,12 @@ def build_transcription_config(speech_model: str = "best") -> aai.TranscriptionC
             "AssemblyAI SDK has no speech model parameter; API patch will inject speech_models"
         )
 
+    if config.assemblyai_sentiment_entities:
+        if "sentiment_analysis" in params:
+            kwargs["sentiment_analysis"] = True
+        if "entity_detection" in params:
+            kwargs["entity_detection"] = True
+
     return aai.TranscriptionConfig(**kwargs)
 
 
@@ -186,11 +192,40 @@ def cache_transcript_data(video_path: Path, transcript) -> None:
             for utterance in transcript.utterances
         ]
 
+    sentiment_data = []
+    sentiment_results = getattr(transcript, "sentiment_analysis_results", None)
+    if sentiment_results:
+        for row in sentiment_results:
+            sentiment_data.append(
+                {
+                    "text": getattr(row, "text", None),
+                    "start": getattr(row, "start", None),
+                    "end": getattr(row, "end", None),
+                    "sentiment": getattr(row, "sentiment", None),
+                    "confidence": getattr(row, "confidence", None),
+                }
+            )
+
+    entities_data = []
+    entity_results = getattr(transcript, "entities", None)
+    if entity_results:
+        for row in entity_results:
+            entities_data.append(
+                {
+                    "text": getattr(row, "text", None),
+                    "entity_type": getattr(row, "entity_type", None),
+                    "start": getattr(row, "start", None),
+                    "end": getattr(row, "end", None),
+                }
+            )
+
     cache_data = {
         "version": TRANSCRIPT_CACHE_SCHEMA_VERSION,
         "words": words_data,
         "utterances": utterances_data,
         "text": transcript.text,
+        "sentiment_analysis": sentiment_data,
+        "entities": entities_data,
     }
 
     with open(cache_path, "w") as f:

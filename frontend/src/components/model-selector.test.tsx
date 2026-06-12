@@ -123,4 +123,19 @@ describe("ModelSelector", () => {
 
     expect(onChange).toHaveBeenCalledWith("ollama:gemma4:e2b");
   });
+
+  it("inline variant shows scrollable list and selects on description click", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+
+    render(<ModelSelector variant="inline" value={null} onChange={onChange} />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Recommended for your system")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Top pick for 16 GB laptops.")).toBeInTheDocument();
+    await user.click(screen.getByText("Top pick for 16 GB laptops."));
+    expect(onChange).toHaveBeenCalledWith("ollama:gemma4:e4b");
+  });
 });

@@ -9,6 +9,16 @@ import { NewSessionDialog } from "@/components/console/new-session-dialog";
 import { SessionRow } from "@/components/console/session-row";
 import { ClipQueueRow } from "@/components/console/clip-queue-row";
 import { toast } from "sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type LeftRailProps = {
   className?: string;
@@ -22,6 +32,7 @@ type LeftRailProps = {
   loading: boolean;
   onRefresh: () => void;
   onSessionCreated: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   onSelectClip: (clipId: string) => void;
 };
 
@@ -37,10 +48,13 @@ export function LeftRail({
   loading,
   onRefresh,
   onSessionCreated,
+  onDeleteSession,
   onSelectClip,
 }: LeftRailProps) {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const deleteTarget = sessions.find((session) => session.id === deleteTargetId) ?? null;
   const selectedClips = clips.filter((clip) => clip.selected);
   const selectedCount = selectedClips.length;
 
@@ -126,6 +140,7 @@ export function LeftRail({
                   session={session}
                   isActive={session.id === activeSessionId}
                   onSelect={() => onSelectSession(session.id)}
+                  onDelete={() => setDeleteTargetId(session.id)}
                 />
               </li>
             ))}
@@ -186,6 +201,37 @@ export function LeftRail({
         onOpenChange={setNewSessionOpen}
         onCreated={onSessionCreated}
       />
+
+      <AlertDialog
+        open={deleteTargetId != null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTargetId(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Delete &ldquo;{deleteTarget?.title ?? "this session"}&rdquo; and its clips?
+              Uploaded source video will be removed if no other session uses it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteTargetId) {
+                  onDeleteSession(deleteTargetId);
+                  setDeleteTargetId(null);
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

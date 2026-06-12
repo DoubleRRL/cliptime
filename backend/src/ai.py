@@ -187,9 +187,10 @@ TIMING & CATEGORIZATION GUIDELINES:
    - Designed for extremely short attention spans (TikTok, YouTube Shorts, Reels).
    - Must have a powerful hook immediately in the first 2 seconds.
 2. deep_context_clips:
-   - MUST be between 30-90 seconds.
+   - MUST be between 30-90 seconds (sweet spot: 45-75 seconds for complete narrative beats).
    - Designed for in-depth educational insights or deep conversations requiring setup and context.
    - Still requires a strong hook, but permits a longer build-up and more comprehensive payoff.
+   - Never span whole chapters or multi-minute monologues — pick the tightest self-contained arc.
 
 TIMESTAMP REQUIREMENTS - EXTREMELY IMPORTANT:
 - Use EXACT timestamps as they appear in the transcript
@@ -258,6 +259,24 @@ OLLAMA_JSON_RESPONSE_SUFFIX = (
     "\n\nIMPORTANT: You MUST respond with ONLY a valid JSON object. "
     "Required top-level keys: micro_hooks, deep_context_clips, summary, key_topics. "
     "Put 3-5 segments in micro_hooks (each 10-30 seconds) and 2-4 segments in deep_context_clips (each 30-90 seconds). "
+    "Do NOT include any text before or after the JSON. Do NOT use markdown code fences. "
+    "Start your response with { and end with }."
+)
+
+SIGNAL_FIRST_PATCH_JSON_SUFFIX = (
+    "\n\nIMPORTANT: You MUST respond with ONLY a valid JSON object. "
+    "Top-level keys: micro_hook (object or null), deep_context_clip (object or null), summary (string), key_topics (array). "
+    "micro_hook: optional 10-25 second punchy standalone hook from this patch only. "
+    "deep_context_clip: optional 40-75 second narrative arc with setup and payoff from this patch only. "
+    "Either field may be null if no strong candidate exists in this patch. "
+    "Each segment object MUST include start_time, end_time, text, relevance_score, reasoning, and a nested virality object. "
+    "The virality object MUST include hook_score, engagement_score, value_score, shareability_score (each 0-25), "
+    "total_score (0-100, sum of the four subscores), hook_type, and virality_reasoning. "
+    "Example segment shape: "
+    '{"start_time":"01:00","end_time":"01:18","text":"...","relevance_score":0.9,"reasoning":"...",'
+    '"virality":{"hook_score":22,"engagement_score":20,"value_score":18,"shareability_score":19,'
+    '"total_score":79,"hook_type":"question","virality_reasoning":"..."}} '
+    "Do NOT omit virality or use placeholder scores. "
     "Do NOT include any text before or after the JSON. Do NOT use markdown code fences. "
     "Start your response with { and end with }."
 )
@@ -426,8 +445,66 @@ def _classify_segment_tier(duration: int) -> Optional[str]:
     return None
 
 
+def _strip_thinking_blocks(text: str) -> str:
+    """Remove Qwen3/DeepSeek thinking sections before JSON extraction."""
+    patterns = [
+        r"<redacted_reasoning>.*?</redacted_reasoning>",
+        r"<think(?:ing)?>.*?</think(?:ing)?>",
+    ]
+    cleaned = text
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    return cleaned.strip()
+
+
+def _extract_ollama_message_text(data: dict) -> str:
+    """Return model output text, including Qwen3 thinking field when content is empty."""
+    message = data.get("message") or {}
+    content = str(message.get("content") or "").strip()
+    if content:
+        return content
+    thinking = str(message.get("thinking") or "").strip()
+    return thinking
+
+
+def _ollama_chat_payload(
+    model_name: str,
+    system: str,
+    prompt: str,
+    options: dict[str, Any],
+) -> dict[str, Any]:
+    """Build an Ollama /api/chat payload with thinking disabled for JSON reliability."""
+    payload: dict[str, Any] = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": False,
+        "format": "json",
+        "options": options,
+    }
+    if model_name.startswith("qwen3"):
+        payload["think"] = False
+    return payload
+
+
+def _ollama_options_for_model(model_name: str) -> dict[str, Any]:
+    """Per-model Ollama inference options (context window, temperature)."""
+    tag = model_name.removeprefix("ollama:") if model_name.startswith("ollama:") else model_name
+    options: dict[str, Any] = {"temperature": 0, "num_predict": config.ollama_num_predict}
+    if tag.startswith("gemma4"):
+        options["num_ctx"] = 32768
+    elif tag.startswith("qwen3"):
+        options["num_ctx"] = 40960
+    else:
+        options["num_ctx"] = 8192
+    return options
+
+
 def _extract_json_from_text(text: str) -> Optional[dict]:
     """Extract a JSON object from raw LLM text output, tolerating markdown fences and preamble."""
+    text = _strip_thinking_blocks(text)
     # Try to find JSON within ```json ... ``` fences first
     fence_match = re.search(r'```(?:json)?\s*\n?(\{.*?\})\s*```', text, re.DOTALL)
     if fence_match:
@@ -457,16 +534,84 @@ def _extract_json_from_text(text: str) -> Optional[dict]:
     return None
 
 
-def _build_default_virality() -> ViralityAnalysis:
-    """Build a default virality analysis for segments parsed from raw JSON."""
+def _is_placeholder_virality(virality: ViralityAnalysis) -> bool:
+    """Detect the old flat fallback where every subscore defaulted to 10."""
+    return (
+        virality.hook_score == 10
+        and virality.engagement_score == 10
+        and virality.value_score == 10
+        and virality.shareability_score == 10
+        and virality.total_score == 40
+        and virality.hook_type == "none"
+    )
+
+
+def _virality_dict_has_scores(data: dict) -> bool:
+    """Return True when the model supplied at least one meaningful virality field."""
+    score_keys = (
+        "hook_score",
+        "engagement_score",
+        "value_score",
+        "shareability_score",
+        "total_score",
+        "virality_score",
+    )
+    for key in score_keys:
+        value = data.get(key)
+        if value is None:
+            continue
+        try:
+            if int(value) != 10:
+                return True
+        except (TypeError, ValueError):
+            return True
+    hook_type = str(data.get("hook_type") or "").strip().lower()
+    return hook_type not in ("", "none")
+
+
+def _infer_hook_type(text: str) -> Literal[
+    "question", "statement", "statistic", "story", "contrast", "none"
+]:
+    lowered = text.lower().strip()
+    if "?" in text[:80] or lowered.startswith(("what", "why", "how", "when")):
+        return "question"
+    if re.search(r"\d", text):
+        return "statistic"
+    if any(word in lowered for word in ("but", "however", "actually", "instead")):
+        return "contrast"
+    if any(word in lowered for word in ("story", "remember", "one time", "when i")):
+        return "story"
+    if text.strip():
+        return "statement"
+    return "none"
+
+
+def _estimate_virality_from_segment(seg: dict) -> ViralityAnalysis:
+    """Derive differentiated virality when the model omits score fields."""
+    from .transcript_signals import score_utterance
+    from .transcript_windows import TranscriptLine
+
+    text = str(seg.get("text") or "").strip()
+    relevance = float(seg.get("relevance_score") or seg.get("relevance") or 0.5)
+    line = TranscriptLine(start_seconds=0, end_seconds=30, text=text, raw=text)
+    signal = score_utterance(line)
+
+    hook = min(25, max(12, int(14 + signal * 1.2 + (4 if "?" in text[:80] else 0))))
+    engagement = min(25, max(12, int(12 + relevance * 10 + min(signal, 5))))
+    value = min(25, max(10, int(10 + min(len(text.split()), 60) / 6 + relevance * 6)))
+    shareability = min(25, max(12, int(12 + signal + relevance * 8)))
+    total = min(100, hook + engagement + value + shareability)
+
     return ViralityAnalysis(
-        hook_score=10,
-        engagement_score=10,
-        value_score=10,
-        shareability_score=10,
-        total_score=40,
-        hook_type="none",
-        virality_reasoning="Parsed from raw model output",
+        hook_score=hook,
+        engagement_score=engagement,
+        value_score=value,
+        shareability_score=shareability,
+        total_score=total,
+        hook_type=_infer_hook_type(text),
+        virality_reasoning=(
+            f"Estimated from transcript signals (signal={signal:.1f}, relevance={relevance:.2f})"
+        ),
     )
 
 
@@ -523,8 +668,10 @@ def _normalize_virality_dict(virality_data: dict) -> ViralityAnalysis:
 def _virality_from_segment(seg: dict) -> ViralityAnalysis:
     """Parse virality from nested object or flat segment-level score fields."""
     virality_data = seg.get("virality") or seg.get("virality_analysis")
-    if isinstance(virality_data, dict):
-        return _normalize_virality_dict(virality_data)
+    if isinstance(virality_data, dict) and _virality_dict_has_scores(virality_data):
+        parsed = _normalize_virality_dict(virality_data)
+        if not _is_placeholder_virality(parsed):
+            return parsed
 
     flat_score_keys = (
         "hook_score",
@@ -535,9 +682,16 @@ def _virality_from_segment(seg: dict) -> ViralityAnalysis:
         "virality_score",
     )
     if any(seg.get(key) is not None for key in flat_score_keys):
-        return _normalize_virality_dict(seg)
+        parsed = _normalize_virality_dict(seg)
+        if not _is_placeholder_virality(parsed):
+            return parsed
 
-    return _build_default_virality()
+    logger.info(
+        "Segment %s-%s missing model virality scores; estimating from transcript signals",
+        seg.get("start_time"),
+        seg.get("end_time"),
+    )
+    return _estimate_virality_from_segment(seg)
 
 
 def _parse_segment_list(raw_segments: list) -> List[TranscriptSegment]:
@@ -626,32 +780,27 @@ async def _ollama_raw_json_call(transcript: str) -> Optional[TranscriptAnalysis]
         async with httpx.AsyncClient(timeout=300.0) as client:
             resp = await client.post(
                 f"{base_url}/api/chat",
-                json={
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                    "format": "json",
-                    "options": {
-                        "temperature": 0.1,
-                        "num_predict": 8192,
-                    }
-                },
+                json=_ollama_chat_payload(
+                    model_name,
+                    system,
+                    prompt,
+                    _ollama_options_for_model(f"ollama:{model_name}"),
+                ),
             )
             resp.raise_for_status()
             data = resp.json()
-            content = data.get("message", {}).get("content", "")
+            content = _extract_ollama_message_text(data)
             logger.info(f"Ollama: got {len(content)} chars from model")
 
             parsed = _extract_json_from_text(content)
             if not parsed:
-                # The content might already be valid JSON since we asked for format=json
                 try:
-                    parsed = json.loads(content)
+                    parsed = json.loads(_strip_thinking_blocks(content))
                 except json.JSONDecodeError:
-                    logger.error("Ollama: could not extract JSON from response")
+                    logger.error(
+                        "Ollama: could not extract JSON from response (preview: %s)",
+                        content[:500],
+                    )
                     return None
 
             return _parse_raw_analysis(parsed)
@@ -868,40 +1017,40 @@ async def _ollama_json_request(
 
     base_url = (config.ollama_base_url or "http://localhost:11434/v1").rstrip("/v1").rstrip("/")
     model_name = effective_llm().removeprefix("ollama:")
-    predict_tokens = num_predict or config.ollama_num_predict
+    options = _ollama_options_for_model(f"ollama:{model_name}")
+    if num_predict:
+        options["num_predict"] = num_predict
 
-    try:
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            resp = await client.post(
-                f"{base_url}/api/chat",
-                json={
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                    "format": "json",
-                    "options": {
-                        "temperature": 0.1,
-                        "num_predict": predict_tokens,
-                    },
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            content = data.get("message", {}).get("content", "")
-            parsed = _extract_json_from_text(content)
-            if parsed:
-                return parsed
-            try:
-                return json.loads(content)
-            except json.JSONDecodeError:
-                logger.error("Ollama: could not extract JSON from response")
-                return None
-    except Exception as exc:
-        logger.error(f"Ollama request failed: {exc}")
-        return None
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                resp = await client.post(
+                    f"{base_url}/api/chat",
+                    json=_ollama_chat_payload(model_name, system, prompt, options),
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                content = _extract_ollama_message_text(data)
+                parsed = _extract_json_from_text(content)
+                if parsed:
+                    return parsed
+                try:
+                    return json.loads(_strip_thinking_blocks(content))
+                except json.JSONDecodeError:
+                    logger.error(
+                        "Ollama: could not extract JSON from response (preview: %s)",
+                        content[:500],
+                    )
+                    return None
+        except Exception as exc:
+            last_exc = exc
+            logger.error(f"Ollama request failed (attempt {attempt + 1}/3): {exc}")
+            if attempt < 2:
+                await asyncio.sleep(5 * (attempt + 1))
+    if last_exc:
+        logger.error(f"Ollama request failed after retries: {last_exc}")
+    return None
 
 
 def build_window_micro_prompt(
@@ -940,8 +1089,9 @@ def build_window_deep_prompt(
     return f"""Analyze ONLY this transcript window ({window_index + 1}/{total_windows}) and find deep context clips.
 
 Rules:
-- Return ONLY deep_context_clips (30-90 seconds each)
+- Return ONLY deep_context_clips (30-90 seconds each; prefer 45-75 seconds)
 - Find {config.deep_per_window} narrative arcs in THIS window only
+- Each clip must be a complete thought with setup and payoff — not a whole section or multi-minute rant
 - Use timestamps that appear in this window
 - Do not invent content outside the window
 
@@ -1089,6 +1239,179 @@ async def rerank_candidates(
         return candidates
 
 
+def _scaled_quality_caps(transcript: str) -> tuple[int, int]:
+    """Scale quality-tier caps for longer recordings (+1 micro per ~10 extra minutes)."""
+    from .transcript_windows import parse_transcript_lines
+
+    lines = parse_transcript_lines(transcript)
+    if lines:
+        total_seconds = max(line.end_seconds for line in lines)
+    else:
+        total_seconds = max(600, len(transcript) // 15)
+
+    extra_ten_min_blocks = max(0, total_seconds // 600 - 1)
+    max_micro = min(12, config.quality_mode_max_micro + extra_ten_min_blocks)
+    max_deep = min(8, config.quality_mode_max_deep + extra_ten_min_blocks // 2)
+    return max_micro, max_deep
+
+
+def _parse_patch_analysis(
+    raw: dict,
+) -> tuple[Optional[TranscriptSegment], Optional[TranscriptSegment]]:
+    """Parse a per-patch LLM response with optional micro_hook and deep_context_clip."""
+    micro: Optional[TranscriptSegment] = None
+    deep: Optional[TranscriptSegment] = None
+
+    micro_raw = raw.get("micro_hook")
+    if isinstance(micro_raw, dict):
+        parsed_micro = _parse_segment_list([micro_raw])
+        micro = parsed_micro[0] if parsed_micro else None
+
+    deep_raw = raw.get("deep_context_clip")
+    if isinstance(deep_raw, dict):
+        parsed_deep = _parse_segment_list([deep_raw])
+        deep = parsed_deep[0] if parsed_deep else None
+
+    return micro, deep
+
+
+def build_signal_first_patch_prompt(
+    patch_text: str,
+    patch_index: int,
+    total_patches: int,
+    anchor_score: float,
+) -> str:
+    return f"""Analyze ONLY this high-signal transcript patch ({patch_index + 1}/{total_patches}).
+
+This patch was pre-selected by a signal ranker (score={anchor_score:.1f}). Extract up to two clips when they exist in this span:
+- micro_hook: 10-25 second punchy standalone hook (optional — omit/null if none)
+- deep_context_clip: 40-75 second narrative arc with setup and payoff (optional — omit/null if none)
+
+Rules:
+- Use timestamps that appear in this patch only
+- Do not invent content outside the patch
+- Zero clips is acceptable when nothing strong exists here
+- Prefer complete thoughts with clear payoff
+
+Patch transcript:
+{patch_text}"""
+
+
+async def analyze_signal_first_patch(
+    patch_text: str,
+    patch_index: int,
+    total_patches: int,
+    anchor_score: float,
+) -> tuple[Optional[TranscriptSegment], Optional[TranscriptSegment]]:
+    prompt = build_signal_first_patch_prompt(
+        patch_text, patch_index, total_patches, anchor_score
+    )
+    system = transcript_analysis_system_prompt + SIGNAL_FIRST_PATCH_JSON_SUFFIX
+    raw = await _ollama_json_request(system, prompt, num_predict=2048)
+    if not raw:
+        return None, None
+    return _parse_patch_analysis(raw)
+
+
+async def analyze_transcript_signal_first(
+    transcript: str,
+    processing_mode: str = "quality",
+    progress_callback: Optional[Callable[[int, str, str], Awaitable[None]]] = None,
+    transcript_cache: Optional[Dict[str, Any]] = None,
+) -> TranscriptAnalysis:
+    """Signal-ranked patch analysis: rank utterances, then one focused LLM call per patch."""
+    from .transcript_signals import build_signal_first_patches, compute_anchor_count
+    from .transcript_windows import select_final_segments
+
+    mode = (processing_mode or "quality").lower()
+    if mode == "fast":
+        max_anchors = 6
+        run_deep = False
+        max_micro = config.fast_mode_max_clips
+        max_deep = 0
+        max_per_bucket = 2
+    elif mode == "balanced":
+        max_anchors = 10
+        run_deep = True
+        max_micro = max(3, config.balanced_mode_max_clips // 2)
+        max_deep = max(2, config.balanced_mode_max_clips - max_micro)
+        max_per_bucket = 2
+    else:
+        max_anchors = compute_anchor_count(transcript)
+        run_deep = True
+        max_micro, max_deep = _scaled_quality_caps(transcript)
+        max_per_bucket = 3
+
+    anchors, patches = build_signal_first_patches(
+        transcript,
+        cache=transcript_cache,
+        max_anchors=max_anchors,
+        pad_seconds=config.signal_patch_pad_seconds,
+        max_chars=config.signal_patch_max_chars,
+    )
+    total_patches = len(patches)
+
+    if not patches:
+        raise RuntimeError(
+            "Transcript analysis failed: signal ranker found no analyzable patches. "
+            "Check that the transcript has timestamped lines."
+        )
+
+    logger.info(
+        "Signal-first analysis: %s anchors, %s patches (mode=%s)",
+        len(anchors),
+        total_patches,
+        mode,
+    )
+
+    all_micro: List[TranscriptSegment] = []
+    all_deep: List[TranscriptSegment] = []
+
+    for idx, (anchor, patch_text) in enumerate(zip(anchors, patches)):
+        if progress_callback:
+            await progress_callback(
+                30 + int((idx / max(total_patches, 1)) * 18),
+                f"Analyzing signal patch {idx + 1}/{total_patches}...",
+                "processing",
+            )
+
+        micro, deep = await analyze_signal_first_patch(
+            patch_text,
+            idx,
+            total_patches,
+            anchor.signal_score,
+        )
+        if micro:
+            all_micro.append(micro)
+        if run_deep and deep:
+            all_deep.append(deep)
+
+    final_micro, final_deep = select_final_segments(
+        all_micro,
+        all_deep,
+        max_micro=max_micro,
+        max_deep=max_deep if run_deep else 0,
+        bucket_seconds=config.transcript_window_seconds,
+        max_per_bucket=max_per_bucket,
+    )
+
+    if not final_micro and not final_deep:
+        raise RuntimeError(
+            "Transcript analysis failed: signal-first returned no segments. "
+            "The local model may have failed JSON output or Ollama disconnected. "
+            "Try qwen3:8b, balanced mode, or disable SIGNAL_FIRST_ANALYSIS."
+        )
+
+    draft = TranscriptAnalysis(
+        most_relevant_segments=final_micro + final_deep,
+        micro_hooks=final_micro,
+        deep_context_clips=final_deep,
+        summary="Signal-first transcript analysis",
+        key_topics=["general"],
+    )
+    return _validate_and_finalize_analysis(draft)
+
+
 async def analyze_transcript_map_reduce(
     transcript: str,
     processing_mode: str = "quality",
@@ -1108,18 +1431,20 @@ async def analyze_transcript_map_reduce(
         run_rerank = False
         max_micro = config.fast_mode_max_clips
         max_deep = 0
+        max_per_bucket = 2
     elif mode == "balanced":
         max_windows = 5
         run_deep = True
         run_rerank = False
         max_micro = max(3, config.balanced_mode_max_clips // 2)
         max_deep = max(2, config.balanced_mode_max_clips - max_micro)
+        max_per_bucket = 2
     else:
         max_windows = config.analysis_max_windows
         run_deep = True
         run_rerank = True
-        max_micro = config.quality_mode_max_micro
-        max_deep = config.quality_mode_max_deep
+        max_micro, max_deep = _scaled_quality_caps(transcript)
+        max_per_bucket = 3
 
     windows = split_transcript_into_windows(
         transcript,
@@ -1165,7 +1490,7 @@ async def analyze_transcript_map_reduce(
         max_micro=max_micro,
         max_deep=max_deep if run_deep else 0,
         bucket_seconds=config.transcript_window_seconds,
-        max_per_bucket=2,
+        max_per_bucket=max_per_bucket,
     )
 
     combined = final_micro + final_deep
@@ -1192,6 +1517,13 @@ async def analyze_transcript_map_reduce(
         final_deep = reranked_deep[:max_deep]
         combined = final_micro + final_deep
 
+    if not final_micro and not final_deep:
+        raise RuntimeError(
+            "Transcript analysis failed: map-reduce returned no segments. "
+            "The local model may have failed JSON output or Ollama disconnected. "
+            "Try qwen3:8b or balanced processing mode."
+        )
+
     draft = TranscriptAnalysis(
         most_relevant_segments=final_micro + final_deep,
         micro_hooks=final_micro,
@@ -1206,6 +1538,7 @@ async def get_most_relevant_parts_by_transcript(
     transcript: str,
     processing_mode: str = "quality",
     progress_callback: Optional[Callable[[int, str, str], Awaitable[None]]] = None,
+    transcript_cache: Optional[Dict[str, Any]] = None,
 ) -> TranscriptAnalysis:
     """Get the most relevant parts of a transcript with virality scoring."""
     logger.info(
@@ -1214,6 +1547,20 @@ async def get_most_relevant_parts_by_transcript(
 
     analysis: Optional[TranscriptAnalysis] = None
     use_map_reduce = len(transcript) > 8000 or processing_mode in ("balanced", "quality")
+
+    if (
+        effective_llm().startswith("ollama:")
+        and config.signal_first_analysis
+    ):
+        logger.info(
+            f"Using signal-first analysis (mode={processing_mode}, chars={len(transcript)})"
+        )
+        return await analyze_transcript_signal_first(
+            transcript,
+            processing_mode=processing_mode,
+            progress_callback=progress_callback,
+            transcript_cache=transcript_cache,
+        )
 
     if use_map_reduce and effective_llm().startswith("ollama:"):
         logger.info(
@@ -1545,7 +1892,7 @@ async def score_segment_virality(text: str) -> SegmentRescoreResult:
     excerpt = str(text or "").strip()
     if not excerpt:
         return SegmentRescoreResult(
-            virality=_build_default_virality(),
+            virality=_estimate_virality_from_segment({"text": ""}),
             post_title="Untitled clip",
         )
 
@@ -1555,23 +1902,27 @@ async def score_segment_virality(text: str) -> SegmentRescoreResult:
                 "Score this clip transcript. Return JSON with keys: "
                 "post_title (string, max 60 chars), virality (object with hook_score, "
                 "engagement_score, value_score, shareability_score, total_score, hook_type, "
-                "virality_reasoning)."
+                "virality_reasoning). Each subscore must be 0-25 and total_score must equal their sum."
             )
             raw = await _ollama_json_request(system, excerpt[:2000], num_predict=1024)
             if raw:
                 virality_raw = (
                     raw.get("virality") if isinstance(raw.get("virality"), dict) else {}
                 )
-                try:
-                    virality = (
-                        ViralityAnalysis(**virality_raw)
-                        if virality_raw
-                        else _build_default_virality()
-                    )
-                except Exception:
-                    virality = _build_default_virality()
+                if virality_raw and _virality_dict_has_scores(virality_raw):
+                    try:
+                        virality = _normalize_virality_dict(virality_raw)
+                        if not _is_placeholder_virality(virality):
+                            return SegmentRescoreResult(
+                                virality=virality,
+                                post_title=_normalize_post_title(
+                                    str(raw.get("post_title") or ""), excerpt
+                                ),
+                            )
+                    except Exception:
+                        pass
                 return SegmentRescoreResult(
-                    virality=virality,
+                    virality=_estimate_virality_from_segment({"text": excerpt}),
                     post_title=_normalize_post_title(
                         str(raw.get("post_title") or ""), excerpt
                     ),
@@ -1582,10 +1933,10 @@ async def score_segment_virality(text: str) -> SegmentRescoreResult:
         payload.post_title = _normalize_post_title(payload.post_title, excerpt)
         return payload
     except Exception as exc:
-        logger.warning("Segment re-score failed, using fallback: %s", exc)
+        logger.warning("Segment re-score failed, estimating virality: %s", exc)
 
     return SegmentRescoreResult(
-        virality=_build_default_virality(),
+        virality=_estimate_virality_from_segment({"text": excerpt}),
         post_title=_normalize_post_title("", excerpt),
     )
 

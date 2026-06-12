@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("local user can open the console and save preferences", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("link", { name: "SupoClip" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Cliptime" })).toBeVisible();
   await expect(page.getByRole("button", { name: /new session/i })).toBeVisible();
 
   await page.goto("/settings");

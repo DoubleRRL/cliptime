@@ -18,7 +18,7 @@ from ..repositories.task_repository import TaskRepository
 from ..repositories.source_repository import SourceRepository
 from ..repositories.clip_repository import ClipRepository
 from ..repositories.cache_repository import CacheRepository
-from .video_service import VideoService
+from .video_service import UPLOAD_URL_PREFIX, VideoService
 from ..config import Config, get_config
 from ..clip_editor import (
     trim_clip_file,
@@ -31,7 +31,7 @@ from ..video_utils import (
     load_cached_transcript_data,
     get_words_in_range,
 )
-from ..file_cleanup import delete_clip_files
+from ..file_cleanup import delete_clip_files, delete_upload_source_files
 
 logger = logging.getLogger(__name__)
 
@@ -321,6 +321,11 @@ class TaskService:
             # each finishes. DB writes stay in this coroutine so the shared
             # AsyncSession is never used concurrently.
             segments_to_render = result.get("segments_to_render", [])
+            if not segments_to_render:
+                raise RuntimeError(
+                    "AI analysis returned no clip segments. "
+                    "Try a different local model (e.g. qwen3:8b) or balanced mode."
+                )
             video_path = Path(result["video_path"])
             total_clips = len(segments_to_render)
             clips_output_dir = Path(self.config.temp_dir) / "clips"
@@ -568,13 +573,48 @@ class TaskService:
         return await self.task_repo.get_user_tasks(self.db, user_id, limit)
 
     async def delete_task(self, task_id: str) -> None:
-        """Delete a task and all its associated clips."""
+        """Delete a task, its clips, and source media when no other task references it."""
+        task = await self.task_repo.get_task_by_id(self.db, task_id)
+        if not task:
+            logger.warning("delete_task called for missing task %s", task_id)
+            return
+
+        if task.get("status") in ("queued", "processing"):
+            try:
+                await get_redis().setex(f"task_cancel:{task_id}", 3600, "1")
+            except Exception as exc:
+                logger.warning(
+                    "Failed to set cancel flag for task %s: %s", task_id, exc
+                )
+
         clips = await self.clip_repo.get_clips_by_task(self.db, task_id)
         delete_clip_files(clips)
         await self.clip_repo.delete_clips_by_task(self.db, task_id)
+
+        source_id = task.get("source_id")
+        source_url = task.get("source_url")
+        if source_id:
+            other_tasks = await self.task_repo.count_tasks_by_source_id(
+                self.db, source_id, exclude_task_id=task_id
+            )
+            if other_tasks == 0 and source_url:
+                if str(source_url).startswith(UPLOAD_URL_PREFIX):
+                    try:
+                        video_path = self.video_service.resolve_local_video_path(
+                            source_url
+                        )
+                        delete_upload_source_files(video_path)
+                    except Exception as exc:
+                        logger.warning(
+                            "Failed to delete upload files for task %s: %s",
+                            task_id,
+                            exc,
+                        )
+                await self.cache_repo.delete_by_source_url(self.db, source_url)
+
         await self.task_repo.delete_task(self.db, task_id)
 
-        logger.info(f"Deleted task {task_id} and all associated clips")
+        logger.info("Deleted task %s and associated artifacts", task_id)
 
     async def update_task_settings(
         self,

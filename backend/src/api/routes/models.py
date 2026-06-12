@@ -26,6 +26,26 @@ OLLAMA_PREFIX = "ollama:"
 # Gemma 4 requires Ollama 0.20+ (ollama pull gemma4:e4b).
 MODEL_CATALOG: List[Dict[str, Any]] = [
     {
+        "tag": "qwen3:4b",
+        "display_name": "Qwen 3 4B",
+        "params_b": 4,
+        "download_gb": 2.5,
+        "min_ram_gb": 8,
+        "speed": "fast",
+        "quality": "good",
+        "description": "Fast Qwen 3 tier. Strong JSON output and reliable clip picks on 8 GB machines.",
+    },
+    {
+        "tag": "qwen3:8b",
+        "display_name": "Qwen 3 8B",
+        "params_b": 8,
+        "download_gb": 5.2,
+        "min_ram_gb": 16,
+        "speed": "medium",
+        "quality": "good",
+        "description": "Top pick for 16 GB machines. Best balance of JSON reliability and clip quality.",
+    },
+    {
         "tag": "gemma4:e2b",
         "display_name": "Gemma 4 E2B",
         "params_b": 2,
@@ -130,8 +150,12 @@ def _normalize_ollama_name(name: str) -> str:
 
 
 def _catalog_priority(tag: str) -> int:
-    """Prefer Gemma 4 family when quality and fit are tied."""
-    return 2 if tag.startswith("gemma4:") else 0
+    """Prefer Qwen 3, then Gemma 4, when quality and fit are tied."""
+    if tag.startswith("qwen3:"):
+        return 3
+    if tag.startswith("gemma4:"):
+        return 2
+    return 0
 
 
 def _is_catalog_model_installed(installed_names: set[str], catalog_tag: str) -> bool:

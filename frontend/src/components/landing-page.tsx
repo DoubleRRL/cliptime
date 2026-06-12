@@ -147,7 +147,7 @@ export default function LandingPage() {
           <Link href="/" className="flex items-center gap-2.5 group">
             <Image
               src="/logo.png"
-              alt="SupoClip"
+              alt="Cliptime logo"
               width={24}
               height={24}
               className="rounded-lg transition-transform group-hover:scale-105"
@@ -159,7 +159,7 @@ export default function LandingPage() {
                   "var(--font-syne), var(--font-geist-sans), system-ui",
               }}
             >
-              SupoClip
+              Cliptime
             </span>
           </Link>
 
@@ -641,7 +641,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-2">
             <Image
               src="/logo.png"
-              alt="SupoClip"
+              alt="Cliptime logo"
               width={24}
               height={24}
               className="rounded-md"
@@ -650,7 +650,7 @@ export default function LandingPage() {
               className="text-sm font-semibold"
               style={{ fontFamily: "var(--font-syne), system-ui" }}
             >
-              SupoClip
+              Cliptime
             </span>
           </div>
           <div className="flex items-center gap-6 text-xs text-muted-foreground">

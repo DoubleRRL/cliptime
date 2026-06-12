@@ -73,3 +73,11 @@ class CacheRepository:
             },
         )
         await db.commit()
+
+    @staticmethod
+    async def delete_by_source_url(db: AsyncSession, source_url: str) -> None:
+        await db.execute(
+            text("DELETE FROM processing_cache WHERE source_url = :source_url"),
+            {"source_url": source_url},
+        )
+        await db.commit()
