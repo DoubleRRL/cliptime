@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start SupoClip (Docker: frontend, backend, worker, postgres, redis)
+# Start Cliptime (Docker: frontend, backend, worker, postgres, redis)
 
 set -e
 

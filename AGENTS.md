@@ -1,50 +1,81 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-This repository is a monorepo with two apps:
-- `backend/`: FastAPI + ARQ worker (`src/api`, `src/services`, `src/repositories`, `src/workers`).
-- `frontend/`: Next.js app (`src/app`, `src/components`, `src/lib`, `prisma/`).
+Cliptime is a self-hosted AI clipper (FastAPI + ARQ worker + Next.js). Long-form video in; transcribed, segmented by an LLM, rendered as vertical clips with subtitles.
 
-Infra and bootstrap files live at the root: `docker-compose.yml`, `init.sql`, `.env.example`, and `start.sh`.
+## Root files
 
-## Build, Test, and Development Commands
-Use Docker for full-stack development:
-- `docker-compose up -d --build`: start frontend, backend, worker, Postgres, and Redis.
-- `docker-compose logs -f`: stream service logs.
-- `docker-compose down`: stop everything.
+| Path | Purpose |
+|------|---------|
+| `docker-compose.yml` | Runs frontend, backend API, ARQ worker, PostgreSQL, Redis |
+| `init.sql` | PostgreSQL schema (tasks, clips, sources + Better Auth tables) |
+| `.env.example` | Environment template — copy to `.env` |
+| `start.sh` | Creates `.env` if missing, builds stack, waits on `/health` |
+| `Makefile` | `make test`, `make test-backend`, `make test-frontend`, `make test-e2e` |
+| `README.md` | Human quickstart and troubleshooting |
 
-Local app commands:
-- `cd frontend && bun install && bun run dev`: run Next.js in dev mode.
-- `cd frontend && bun run build && bun run start`: production build + serve.
-- `cd frontend && bun run lint`: run ESLint.
-- `cd backend && uv sync && uvicorn src.main_refactored:app --reload --host 0.0.0.0 --port 8000`: run API locally.
-- `cd backend && .venv/bin/arq src.workers.tasks.WorkerSettings`: run the worker.
-- `make test`: backend pytest + frontend vitest + Playwright e2e.
+## `backend/`
 
-## Coding Style & Naming Conventions
-- Python: 4-space indentation, type hints where practical, `snake_case` for functions/modules.
-- TypeScript/React: 2-space indentation, `PascalCase` for component names, `camelCase` for variables/functions, route files in Next.js App Router conventions (`app/.../page.tsx`, `route.ts`).
-- Linting: `frontend/eslint.config.mjs`.
-- Imports: use the `@/*` alias in the Next.js app when possible.
+| Path | Purpose |
+|------|---------|
+| `src/main_refactored.py` | FastAPI app entry (use this, not legacy `main.py`) |
+| `src/api/routes/` | HTTP handlers (`tasks`, `media`, `models`, `admin`, …) |
+| `src/services/` | Business logic (`task_service`, `video_service`) |
+| `src/repositories/` | Raw SQL via asyncpg (no ORM for app tables) |
+| `src/workers/` | ARQ worker (`process_video_task`, progress via Redis → SSE) |
+| `src/ai.py` | LLM clip selection; signal-first path for Ollama |
+| `src/video_utils.py` | Clip render, crop, subtitles, face/speaker layout |
+| `fonts/`, `transitions/` | Drop-in `.ttf` / `.mp4` assets (auto-listed by API) |
+| `migrations/` | SQL migrations applied outside `init.sql` on existing DBs |
+| `tests/` | `unit/` and `integration/` pytest suites |
 
-## Testing Guidelines
-- Backend: `cd backend && uv run pytest` (unit + integration under `backend/tests/`).
-- Frontend: `cd frontend && bun run test:coverage` (Vitest) and `bun run test:e2e` (Playwright).
-- CI runs the same suite via `.github/workflows/tests.yml`.
+Local run: `uv sync` → `uvicorn src.main_refactored:app --reload --port 8000` + `arq src.workers.tasks.WorkerSettings` (needs Postgres, Redis, ffmpeg).
 
-When adding tests, place them near code or under `tests/` with clear names (`test_*.py`, `*.test.ts[x]`).
+## `frontend/`
 
-## Commit & Pull Request Guidelines
-Recent history favors short imperative commit subjects (`Add list endpoint`, `Fix typo`, `improve UX`). Prefer:
-- `type(scope): concise summary` (example: `feat(backend): add task list pagination`).
-- One logical change per commit.
+| Path | Purpose |
+|------|---------|
+| `src/app/` | Next.js App Router pages and API proxies to backend |
+| `src/components/` | UI (`console/` = main clip workspace) |
+| `src/lib/` | Shared helpers, auth, API clients |
+| `prisma/` | Better Auth schema and migrations |
+| `e2e/` | Playwright smoke tests |
 
-PRs should include:
-- What changed and why.
-- Any env/config or migration impact.
-- Screenshots/GIFs for UI changes.
-- Linked issue(s) and manual verification steps.
+Local run: `bun install` → `bun run dev` (port 3000).
 
-## Security & Configuration Tips
-- Never commit real secrets; use `.env.example` as the template.
-- Required runtime keys include `ASSEMBLY_AI_API_KEY` and either one hosted LLM provider key (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, or `ANTHROPIC_API_KEY`) or an Ollama model configuration (`LLM=ollama:*`, optional `OLLAMA_BASE_URL`).
+## Flow
+
+```
+Browser → Next.js (:3000) → FastAPI (:8000) → Redis → ARQ worker
+                              ↓                      ↓
+                         PostgreSQL ←────────────────┘
+```
+
+Task `POST` returns immediately; worker processes async; frontend uses SSE for progress.
+
+## Commands
+
+```bash
+docker compose up -d --build    # full stack
+docker compose logs -f worker   # clip pipeline debug
+make test                       # backend + frontend unit tests
+```
+
+## Code style
+
+- Python: 4 spaces, `snake_case`, type hints where useful; `uv` not pip.
+- TypeScript: 2 spaces, `PascalCase` components, `@/*` imports.
+- Lint: `cd frontend && bun run lint`.
+
+## Tests
+
+- Backend: `cd backend && uv run pytest`
+- Frontend: `cd frontend && bun run test:coverage` and `bun run test:e2e`
+- CI: `.github/workflows/tests.yml`
+
+## Commits & PRs
+
+Prefer `type(scope): summary` (e.g. `feat(backend): add clip re-render`). PRs: what/why, env impact, screenshots for UI, verification steps.
+
+## Secrets
+
+Never commit `.env`. Required: `ASSEMBLY_AI_API_KEY` plus cloud LLM key **or** `LLM=ollama:*` with Ollama reachable from the worker container (`OLLAMA_BASE_URL`).
