@@ -564,6 +564,11 @@ async def re_render_clip(
         caption_template = payload.get("caption_template", "riverside")
         highlight_color = payload.get("highlight_color", "#8B5CF6")
         background_color = payload.get("background_color", "#1A1A1ACC")
+        replace = bool(payload.get("replace", False))
+        position_y_raw = payload.get("position_y")
+        position_y = float(position_y_raw) if position_y_raw is not None else None
+        if position_y is not None:
+            position_y = max(0.55, min(0.85, position_y))
 
         task_service = TaskService(db)
         await _require_task_owner(request, task_service, db, task_id)
@@ -586,12 +591,19 @@ async def re_render_clip(
             caption_template,
             highlight_color=highlight_color,
             background_color=background_color,
+            position_y=position_y,
+            replace=replace,
         )
+        forked = bool(updated_clip.get("forked", not replace))
         return {
             "clip": updated_clip,
-            "forked": True,
-            "parent_clip_id": clip_id,
-            "message": "Clip saved as new version",
+            "forked": forked,
+            "parent_clip_id": clip_id if forked else None,
+            "message": (
+                "Clip replaced with regenerated version"
+                if replace
+                else "Clip saved as new version"
+            ),
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

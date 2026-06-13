@@ -302,6 +302,7 @@ class VideoService:
         highlight_color: str = "#8B5CF6",
         background_color: str = "#1A1A1ACC",
         processing_mode: str = "quality",
+        position_y: Optional[float] = None,
     ) -> Optional[Dict[str, Any]]:
         """Render a single clip in the thread pool and return clip_info dict, or None on failure."""
         try:
@@ -338,6 +339,7 @@ class VideoService:
                 highlight_color=highlight_color,
                 background_color=background_color,
                 encode_quality=encoding_quality_for_mode(processing_mode),
+                position_y=position_y,
             )
 
             if not success:

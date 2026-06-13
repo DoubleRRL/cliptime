@@ -806,8 +806,10 @@ class TaskService:
         caption_template: str,
         highlight_color: str = "#8B5CF6",
         background_color: str = "#1A1A1ACC",
+        position_y: Optional[float] = None,
+        replace: bool = False,
     ) -> Dict[str, Any]:
-        """Fork a new clip from source with adjusted boundaries and style."""
+        """Re-render a clip from source with adjusted boundaries and style."""
         from ..ai import score_segment_virality
 
         clip = await self.clip_repo.get_clip_by_id(self.db, clip_id)
@@ -867,10 +869,13 @@ class TaskService:
         clips_output_dir = Path(self.config.temp_dir) / "clips"
         clips_output_dir.mkdir(parents=True, exist_ok=True)
         existing_clips = await self.clip_repo.get_clips_by_task(self.db, task_id)
-        clip_order = (
-            max((item.get("clip_order", 0) for item in existing_clips), default=0) + 1
-        )
-        clip_index = max(clip_order - 1, 0)
+        if replace:
+            clip_order = clip.get("clip_order") or 1
+        else:
+            clip_order = (
+                max((item.get("clip_order", 0) for item in existing_clips), default=0) + 1
+            )
+        clip_index = max(int(clip_order) - 1, 0)
 
         clip_info = await self.video_service.create_single_clip(
             video_path,
@@ -885,9 +890,33 @@ class TaskService:
             True,
             highlight_color=highlight_color,
             background_color=background_color,
+            position_y=position_y,
         )
         if clip_info is None:
             raise ValueError("Failed to re-render clip")
+
+        if replace:
+            delete_clip_files([clip])
+            await self.clip_repo.update_clip_render(
+                self.db,
+                clip_id,
+                clip_info["filename"],
+                clip_info["path"],
+                clip_info["start_time"],
+                clip_info["end_time"],
+                clip_info["duration"],
+                transcript_text,
+                reasoning,
+                virality_score=virality.total_score,
+                hook_score=virality.hook_score,
+                engagement_score=virality.engagement_score,
+                value_score=virality.value_score,
+                shareability_score=virality.shareability_score,
+                hook_type=virality.hook_type,
+            )
+            updated_clip = (await self.clip_repo.get_clip_by_id(self.db, clip_id)) or {}
+            updated_clip["forked"] = False
+            return updated_clip
 
         new_clip_id = await self.clip_repo.create_clip(
             self.db,

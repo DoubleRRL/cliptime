@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ConsoleClip, ConsoleSession } from "@/components/console/types";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,11 @@ export function LeftRail({
   const [exporting, setExporting] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const deleteTarget = sessions.find((session) => session.id === deleteTargetId) ?? null;
+  const activeClipRef = useRef<HTMLLIElement | null>(null);
+
+  useEffect(() => {
+    activeClipRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [activeClipId]);
   const selectedClips = clips.filter((clip) => clip.selected);
   const selectedCount = selectedClips.length;
 
@@ -166,14 +171,18 @@ export function LeftRail({
           ) : (
             <ul className="space-y-1.5">
               {clips.map((clip) => (
-                <ClipQueueRow
+                <li
                   key={clip.id}
-                  clip={clip}
-                  videoSrc={clip.videoUrl || null}
-                  isActive={clip.id === activeClipId}
-                  onSelect={() => onSelectClip(clip.id)}
-                  onToggleSelected={() => toggleClip(clip.id)}
-                />
+                  ref={clip.id === activeClipId ? activeClipRef : undefined}
+                >
+                  <ClipQueueRow
+                    clip={clip}
+                    videoSrc={clip.videoUrl || null}
+                    isActive={clip.id === activeClipId}
+                    onSelect={() => onSelectClip(clip.id)}
+                    onToggleSelected={() => toggleClip(clip.id)}
+                  />
+                </li>
               ))}
             </ul>
           )}

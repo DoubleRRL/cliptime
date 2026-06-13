@@ -251,6 +251,65 @@ class ClipRepository:
         await db.commit()
 
     @staticmethod
+    async def update_clip_render(
+        db: AsyncSession,
+        clip_id: str,
+        filename: str,
+        file_path: str,
+        start_time: str,
+        end_time: str,
+        duration: float,
+        text: str,
+        reasoning: str,
+        virality_score: int = 0,
+        hook_score: int = 0,
+        engagement_score: int = 0,
+        value_score: int = 0,
+        shareability_score: int = 0,
+        hook_type: Optional[str] = None,
+    ) -> None:
+        """Update clip file and scoring metadata after a re-render."""
+        await db.execute(
+            sa_text(
+                """
+                UPDATE generated_clips
+                SET filename = :filename,
+                    file_path = :file_path,
+                    start_time = :start_time,
+                    end_time = :end_time,
+                    duration = :duration,
+                    text = :text,
+                    reasoning = :reasoning,
+                    virality_score = :virality_score,
+                    hook_score = :hook_score,
+                    engagement_score = :engagement_score,
+                    value_score = :value_score,
+                    shareability_score = :shareability_score,
+                    hook_type = :hook_type,
+                    updated_at = NOW()
+                WHERE id = :clip_id
+                """
+            ),
+            {
+                "clip_id": clip_id,
+                "filename": filename,
+                "file_path": file_path,
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration": duration,
+                "text": text,
+                "reasoning": reasoning,
+                "virality_score": virality_score,
+                "hook_score": hook_score,
+                "engagement_score": engagement_score,
+                "value_score": value_score,
+                "shareability_score": shareability_score,
+                "hook_type": hook_type,
+            },
+        )
+        await db.commit()
+
+    @staticmethod
     async def reorder_task_clips(db: AsyncSession, task_id: str) -> None:
         """Normalize clip_order sequence after edits."""
         result = await db.execute(

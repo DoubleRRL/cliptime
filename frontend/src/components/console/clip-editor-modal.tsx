@@ -37,6 +37,21 @@ import {
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+
+const DEFAULT_HIGHLIGHT_COLOR = "#8B5CF6";
+const DEFAULT_PILL_COLOR = "#1A1A1ACC";
+
+type EditorBaseline = {
+  captionTemplate: string;
+  fontSize: number;
+  fontColor: string;
+  highlightColor: string;
+  pillColor: string;
+  positionY: number;
+};
 
 type ClipEditorModalProps = {
   taskId: string | null;
@@ -61,7 +76,15 @@ function formatTimestamp(totalSeconds: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-function mapApiClip(raw: Record<string, unknown>, previous?: ConsoleClip | null): ConsoleClip {
+function mapApiClip(
+  raw: Record<string, unknown>,
+  previous?: ConsoleClip | null,
+  cacheBust?: number,
+): ConsoleClip {
+  const baseUrl = raw.video_url ? `/api${String(raw.video_url)}` : previous?.videoUrl || "";
+  const videoUrl =
+    baseUrl && cacheBust ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}v=${cacheBust}` : baseUrl;
+
   return {
     id: String(raw.id),
     title: String(raw.title || raw.text || previous?.title || "Clip"),
@@ -76,7 +99,7 @@ function mapApiClip(raw: Record<string, unknown>, previous?: ConsoleClip | null)
     shareabilityScore: Number(raw.shareability_score ?? previous?.shareabilityScore ?? 0),
     clipOrder: Number(raw.clip_order ?? previous?.clipOrder ?? 0),
     filename: String(raw.filename || previous?.filename || ""),
-    videoUrl: raw.video_url ? `/api${String(raw.video_url)}` : previous?.videoUrl || "",
+    videoUrl,
     text: String(raw.text ?? previous?.text ?? ""),
     reasoning: String(raw.reasoning ?? previous?.reasoning ?? ""),
     hookType: raw.hook_type ? String(raw.hook_type) : previous?.hookType ?? null,
@@ -143,8 +166,12 @@ export function ClipEditorModal({
   const [captionTemplate, setCaptionTemplate] = useState("riverside");
   const [fontSize, setFontSize] = useState(28);
   const [fontColor, setFontColor] = useState("#FFFFFF");
-  const [highlightColor, setHighlightColor] = useState("#8B5CF6");
-  const [pillColor, setPillColor] = useState("#1A1A1ACC");
+  const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
+  const [pillColor, setPillColor] = useState(DEFAULT_PILL_COLOR);
+  const [positionY, setPositionY] = useState(0.75);
+  const [replaceOriginal, setReplaceOriginal] = useState(false);
+  const [baseline, setBaseline] = useState<EditorBaseline | null>(null);
+  const [previewToken, setPreviewToken] = useState(0);
   const [templates, setTemplates] = useState<CaptionStyleTemplate[]>([]);
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,16 +179,37 @@ export function ClipEditorModal({
 
   useEffect(() => {
     if (!open || !clip) return;
+    const templateId = sessionSettings?.captionTemplate ?? "riverside";
+    const templateDefault =
+      templates.find((template) => template.id === templateId)?.position_y ?? 0.75;
+    const nextBaseline: EditorBaseline = {
+      captionTemplate: templateId,
+      fontSize: sessionSettings?.fontSize ?? 28,
+      fontColor: sessionSettings?.fontColor ?? "#FFFFFF",
+      highlightColor: DEFAULT_HIGHLIGHT_COLOR,
+      pillColor: DEFAULT_PILL_COLOR,
+      positionY: templateDefault,
+    };
     setStartDelta(0);
     setEndDelta(0);
     setError(null);
     setCurrentTime(0);
-    setCaptionTemplate(sessionSettings?.captionTemplate ?? "riverside");
-    setFontSize(sessionSettings?.fontSize ?? 28);
-    setFontColor(sessionSettings?.fontColor ?? "#FFFFFF");
-    setHighlightColor("#8B5CF6");
-    setPillColor("#1A1A1ACC");
-  }, [open, clip, sessionSettings?.captionTemplate, sessionSettings?.fontSize, sessionSettings?.fontColor]);
+    setReplaceOriginal(false);
+    setCaptionTemplate(nextBaseline.captionTemplate);
+    setFontSize(nextBaseline.fontSize);
+    setFontColor(nextBaseline.fontColor);
+    setHighlightColor(nextBaseline.highlightColor);
+    setPillColor(nextBaseline.pillColor);
+    setPositionY(nextBaseline.positionY);
+    setBaseline(nextBaseline);
+  }, [
+    open,
+    clip?.id,
+    sessionSettings?.captionTemplate,
+    sessionSettings?.fontSize,
+    sessionSettings?.fontColor,
+    templates,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -184,13 +232,29 @@ export function ClipEditorModal({
     [templates, captionTemplate],
   );
 
+  const hasTrimChanges = startDelta !== 0 || endDelta !== 0;
+  const hasStyleChanges = baseline
+    ? captionTemplate !== baseline.captionTemplate ||
+      fontSize !== baseline.fontSize ||
+      fontColor !== baseline.fontColor ||
+      highlightColor !== baseline.highlightColor ||
+      pillColor !== baseline.pillColor ||
+      Math.abs(positionY - baseline.positionY) > 0.001
+    : false;
+  const hasChanges = hasTrimChanges || hasStyleChanges;
+
   const previewStart = clip
     ? formatTimestamp(parseTimestamp(clip.startTime) + startDelta)
     : "00:00";
   const previewEnd = clip ? formatTimestamp(parseTimestamp(clip.endTime) - endDelta) : "00:00";
   const displayTitle = clip ? getClipDisplayTitle(clip) : "";
 
-  const videoSrc = clip?.videoUrl || null;
+  const videoSrc = useMemo(() => {
+    if (!clip?.videoUrl) return null;
+    if (!previewToken) return clip.videoUrl;
+    const joiner = clip.videoUrl.includes("?") ? "&" : "?";
+    return `${clip.videoUrl}${joiner}v=${previewToken}`;
+  }, [clip?.videoUrl, previewToken]);
 
   const clipDuration = clip ? clipDurationFromTimes(clip.startTime, clip.endTime) : 0;
 
@@ -220,28 +284,42 @@ export function ClipEditorModal({
           font_color: fontColor,
           highlight_color: highlightColor,
           background_color: pillColor,
+          position_y: positionY,
+          replace: replaceOriginal,
         }),
       });
 
       if (!response.ok) {
-        const parsed = await parseApiError(response, "Failed to save clip");
+        const parsed = await parseApiError(response, "Failed to regenerate clip");
         throw new Error(formatSupportMessage(parsed));
       }
 
       const data = await response.json();
       const raw = data.clip as Record<string, unknown>;
-      const mapped = mapApiClip(raw, clip);
+      const cacheBust = Date.now();
+      const mapped = mapApiClip(raw, clip, cacheBust);
 
       if (data.forked) {
         onClipCreated(mapped);
+        toast.success("Clip regenerated — new version added to queue");
       } else {
         onClipUpdated(mapped);
+        setPreviewToken(cacheBust);
+        toast.success("Clip regenerated with your subtitle changes");
       }
 
       setStartDelta(0);
       setEndDelta(0);
+      setBaseline({
+        captionTemplate,
+        fontSize,
+        fontColor,
+        highlightColor,
+        pillColor,
+        positionY,
+      });
     } catch (applyError) {
-      setError(applyError instanceof Error ? applyError.message : "Failed to save clip");
+      setError(applyError instanceof Error ? applyError.message : "Failed to regenerate clip");
     } finally {
       setIsApplying(false);
     }
@@ -275,6 +353,14 @@ export function ClipEditorModal({
                     {clip.hookType.replace(/_/g, " ")}
                   </Badge>
                 )}
+                {hasChanges && (
+                  <Badge
+                    variant="outline"
+                    className="border-[var(--console-terracotta)]/40 text-[var(--console-terracotta)]"
+                  >
+                    Unsaved style changes
+                  </Badge>
+                )}
               </div>
               <DialogDescription className="text-[var(--console-text-muted)]">
                 {clip.startTime}–{clip.endTime}
@@ -306,6 +392,7 @@ export function ClipEditorModal({
                     highlightColor={highlightColor}
                     pillColor={pillColor}
                     template={activeTemplate}
+                    positionY={positionY}
                   />
                   {isApplying && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
@@ -363,12 +450,24 @@ export function ClipEditorModal({
                 </div>
 
                 <div className="space-y-3">
-                  <p className="text-xs font-medium uppercase tracking-wider text-[var(--console-text-muted)]">
-                    Style
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium uppercase tracking-wider text-[var(--console-text-muted)]">
+                      Style
+                    </p>
+                  </div>
+                  <p className="text-xs leading-relaxed text-[var(--console-text-muted)]">
+                    Changes preview above. Click Regenerate to re-burn subtitles on the source
+                    video.
                   </p>
                   <Select
                     value={captionTemplate}
-                    onValueChange={setCaptionTemplate}
+                    onValueChange={(value) => {
+                      setCaptionTemplate(value);
+                      const template = templates.find((entry) => entry.id === value);
+                      if (template?.position_y != null) {
+                        setPositionY(template.position_y);
+                      }
+                    }}
                     disabled={isApplying}
                   >
                     <SelectTrigger className="border-[var(--console-border)] bg-[var(--console-charcoal)]">
@@ -399,6 +498,20 @@ export function ClipEditorModal({
                       disabled={isApplying}
                     />
                   </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-[var(--console-text-muted)]">
+                      <span>Vertical position</span>
+                      <span>{Math.round(positionY * 100)}%</span>
+                    </div>
+                    <Slider
+                      min={55}
+                      max={85}
+                      step={1}
+                      value={[Math.round(positionY * 100)]}
+                      onValueChange={(value) => setPositionY((value[0] ?? 75) / 100)}
+                      disabled={isApplying}
+                    />
+                  </div>
                   <ColorSwatches
                     label="Text color"
                     value={fontColor}
@@ -422,21 +535,45 @@ export function ClipEditorModal({
                   />
                 </div>
 
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--console-border)] bg-[var(--console-charcoal)]/40 px-3 py-2.5">
+                  <div className="space-y-0.5">
+                    <Label
+                      htmlFor="replace-original"
+                      className="text-sm text-[var(--console-text)]"
+                    >
+                      Replace original
+                    </Label>
+                    <p className="text-xs text-[var(--console-text-muted)]">
+                      {replaceOriginal
+                        ? "Overwrite this clip in place"
+                        : "Keep original and add a new version"}
+                    </p>
+                  </div>
+                  <Switch
+                    id="replace-original"
+                    checked={replaceOriginal}
+                    onCheckedChange={setReplaceOriginal}
+                    disabled={isApplying}
+                  />
+                </div>
+
                 {error && <p className="text-sm text-red-400">{error}</p>}
 
                 <Button
                   type="button"
                   className="w-full bg-[var(--console-terracotta)] hover:bg-[var(--console-terracotta-muted)]"
-                  disabled={isApplying}
+                  disabled={isApplying || !hasChanges}
                   onClick={handleApply}
                 >
                   {isApplying ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving…
+                      Regenerating…
                     </>
+                  ) : replaceOriginal ? (
+                    "Regenerate clip"
                   ) : (
-                    "Save as new clip"
+                    "Regenerate as new clip"
                   )}
                 </Button>
               </div>

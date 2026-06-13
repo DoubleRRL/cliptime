@@ -770,6 +770,7 @@ def create_assemblyai_subtitles(
     highlight_color: Optional[str] = None,
     background_color: Optional[str] = None,
     layout_timeline: Optional[List] = None,
+    position_y: Optional[float] = None,
 ) -> List[TextClip]:
     """Create subtitles using AssemblyAI's precise word timing with template support."""
     transcript_data = load_cached_transcript_data(video_path)
@@ -780,6 +781,8 @@ def create_assemblyai_subtitles(
 
     # Get template settings
     template = get_template(caption_template)
+    if position_y is not None:
+        template = {**template, "position_y": position_y}
     animation_type = template.get("animation", "none")
 
     effective_font_family = font_family or template["font_family"]
@@ -1825,6 +1828,7 @@ def create_optimized_clip(
     highlight_color: Optional[str] = None,
     background_color: Optional[str] = None,
     encode_quality: str = "high",
+    position_y: Optional[float] = None,
 ) -> bool:
     """Create clip with optional subtitles. output_format: 'vertical' (9:16) or 'original' (keep source size)."""
     try:
@@ -1950,6 +1954,8 @@ def create_optimized_clip(
             cropped_clip = processed_clip
         final_clips = [processed_clip]
         template = get_template(caption_template)
+        if position_y is not None:
+            template = {**template, "position_y": position_y}
         from .subtitle_compositor import is_premium_template
 
         use_pil_premium = add_subtitles and (
@@ -1982,6 +1988,7 @@ def create_optimized_clip(
                 highlight_color=highlight_color,
                 background_color=background_color,
                 layout_timeline=relative_layout_timeline,
+                position_y=position_y,
             )
             final_clips.extend(subtitle_clips)
 

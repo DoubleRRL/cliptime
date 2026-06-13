@@ -25,6 +25,7 @@ type CaptionStylePreviewProps = {
   highlightColor: string;
   pillColor: string;
   template: CaptionStyleTemplate | null;
+  positionY?: number;
   sampleWords?: string[];
   className?: string;
 };
@@ -50,13 +51,14 @@ export function CaptionStylePreview({
   highlightColor,
   pillColor,
   template,
+  positionY,
   sampleWords,
   className,
 }: CaptionStylePreviewProps) {
   const [activeWordIndex, setActiveWordIndex] = useState(0);
   const words = useMemo(() => buildWords(template, sampleWords), [template, sampleWords]);
   const showKaraoke = template?.animation === "karaoke";
-  const positionY = template?.position_y ?? 0.75;
+  const resolvedPositionY = positionY ?? template?.position_y ?? 0.75;
   const pillStyle = Boolean(template?.pill_style);
   const strokeWidth = template?.stroke_width ?? 0;
   const strokeColor = template?.stroke_color ?? "#000000";
@@ -101,7 +103,7 @@ export function CaptionStylePreview({
       `}</style>
       <div
         className="pointer-events-none absolute inset-x-0 z-10 flex justify-center px-3"
-        style={{ bottom: `${(1 - positionY) * 100}%`, transform: "translateY(50%)" }}
+        style={{ bottom: `${(1 - resolvedPositionY) * 100}%`, transform: "translateY(50%)" }}
       >
         <p
           className="max-w-full text-center leading-tight"
