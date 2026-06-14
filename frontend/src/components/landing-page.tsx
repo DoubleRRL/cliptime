@@ -13,7 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Scissors,
   Sparkles,
-  Youtube,
+  Upload,
   Github,
   ArrowRight,
   Play,
@@ -100,10 +100,9 @@ const FEATURES = [
 const STEPS = [
   {
     num: "01",
-    title: "Drop a link or file",
-    description:
-      "Paste any YouTube URL or drag-and-drop your own video file.",
-    icon: Youtube,
+    title: "Upload your video",
+    description: "Drop a video file and let SupoClip handle the rest.",
+    icon: Upload,
   },
   {
     num: "02",

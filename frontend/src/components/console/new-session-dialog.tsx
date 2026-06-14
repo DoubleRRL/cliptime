@@ -2,12 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
   SheetDescription,
-  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
@@ -23,11 +21,16 @@ type NewSessionDialogProps = {
 };
 
 export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDialogProps) {
-  const [url, setUrl] = useState("");
+  const [uploadedPath, setUploadedPath] = useState<string | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [llmModel, setLlmModel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const isBusy = isSubmitting || isUploading;
+  const canStart = Boolean(uploadedPath);
 
   // Seed the selector with the user's saved default model.
   useEffect(() => {
@@ -41,9 +44,11 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
   }, [open]);
 
   const reset = () => {
-    setUrl("");
+    setUploadedPath(null);
+    setUploadedFileName(null);
     setError(null);
     setIsSubmitting(false);
+    setIsUploading(false);
   };
 
   const createTask = async (videoUrl: string) => {
@@ -76,12 +81,13 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     return String(data.task_id);
   };
 
-  const handleYoutubeSubmit = async () => {
-    if (!url.trim()) return;
+  const handleStartClipping = async () => {
+    if (!uploadedPath) return;
+
     setIsSubmitting(true);
     setError(null);
     try {
-      const taskId = await createTask(url.trim());
+      const taskId = await createTask(uploadedPath);
       onCreated(taskId);
       onOpenChange(false);
       reset();
@@ -96,7 +102,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     const file = event.target.files?.[0];
     if (!file) return;
 
-    setIsSubmitting(true);
+    setIsUploading(true);
     setError(null);
 
     try {
@@ -108,14 +114,14 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
         throw new Error(formatSupportMessage(parsed));
       }
       const uploadResult = await uploadResponse.json();
-      const taskId = await createTask(String(uploadResult.video_path));
-      onCreated(taskId);
-      onOpenChange(false);
-      reset();
+      setUploadedPath(String(uploadResult.video_path));
+      setUploadedFileName(file.name);
     } catch (uploadError) {
+      setUploadedPath(null);
+      setUploadedFileName(null);
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed");
     } finally {
-      setIsSubmitting(false);
+      setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -135,33 +141,30 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
         <SheetHeader className="pl-1">
           <SheetTitle className="text-[var(--console-text)]">New session</SheetTitle>
           <SheetDescription className="text-[var(--console-text-muted)]">
-            Paste a YouTube link or upload a video file to start clipping.
+            Upload a video file, choose an AI model, then start clipping.
           </SheetDescription>
         </SheetHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-1">
-          <Input
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://youtube.com/watch?v=..."
-            disabled={isSubmitting}
-            className="border-[var(--console-border)] bg-[var(--console-charcoal)] text-[var(--console-text)]"
-          />
-
           <Button
             type="button"
             variant="outline"
             className="w-full border-[var(--console-border)]"
-            disabled={isSubmitting}
+            disabled={isBusy}
             onClick={() => fileInputRef.current?.click()}
           >
-            {isSubmitting ? (
+            {isUploading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
               <Upload className="mr-2 h-4 w-4" />
             )}
-            Upload video file
+            {uploadedFileName ? "Change video file" : "Upload video file"}
           </Button>
+          {uploadedFileName && (
+            <p className="text-xs text-[var(--console-text-muted)]">
+              Ready to clip: {uploadedFileName}
+            </p>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -176,24 +179,22 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
               variant="inline"
               value={llmModel}
               onChange={setLlmModel}
-              disabled={isSubmitting}
+              disabled={isBusy}
             />
           </div>
 
-          {error && <p className="text-sm text-red-400">{error}</p>}
-        </div>
-
-        <SheetFooter>
           <Button
             type="button"
-            className="bg-[var(--console-terracotta)] hover:bg-[var(--console-terracotta-muted)]"
-            disabled={!url.trim() || isSubmitting}
-            onClick={handleYoutubeSubmit}
+            className="w-full bg-[var(--console-terracotta)] hover:bg-[var(--console-terracotta-muted)]"
+            disabled={!canStart || isBusy}
+            onClick={handleStartClipping}
           >
             {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Start clipping
           </Button>
-        </SheetFooter>
+
+          {error && <p className="text-sm text-red-400">{error}</p>}
+        </div>
       </SheetContent>
     </Sheet>
   );

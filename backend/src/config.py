@@ -11,19 +11,11 @@ class Config:
         self.openai_api_key = self._get_optional_env("OPENAI_API_KEY")
         self.anthropic_api_key = self._get_optional_env("ANTHROPIC_API_KEY")
         self.google_api_key = self._get_optional_env("GOOGLE_API_KEY")
-        self.youtube_data_api_key = self._get_optional_env("YOUTUBE_DATA_API_KEY")
         self.ollama_base_url = self._get_optional_env("OLLAMA_BASE_URL")
         self.ollama_api_key = self._get_optional_env("OLLAMA_API_KEY")
 
         self.llm = self._get_optional_env("LLM") or self._infer_default_llm()
         self.assembly_ai_api_key = os.getenv("ASSEMBLY_AI_API_KEY")
-        self.apify_api_token = self._get_optional_env("APIFY_API_TOKEN")
-        self.youtube_metadata_provider = self._normalize_youtube_metadata_provider(
-            os.getenv("YOUTUBE_METADATA_PROVIDER", "yt_dlp")
-        )
-        self.apify_youtube_default_quality = self._normalize_apify_quality(
-            os.getenv("APIFY_YOUTUBE_DEFAULT_QUALITY", "1080")
-        )
 
         self.max_video_duration = int(os.getenv("MAX_VIDEO_DURATION", "5400"))
         self.output_dir = os.getenv("OUTPUT_DIR", "outputs")
@@ -133,23 +125,6 @@ class Config:
         if not value:
             return default
         return [item.strip() for item in value.split(",") if item.strip()]
-
-    @staticmethod
-    def _normalize_apify_quality(value: str | None) -> str:
-        normalized = (value or "").strip()
-        if normalized in {"360", "480", "720", "1080"}:
-            return normalized
-        return "1080"
-
-    @staticmethod
-    def _normalize_youtube_metadata_provider(value: str | None) -> str:
-        normalized = (value or "").strip().lower()
-        if normalized == "youtube_data_api":
-            return "youtube_data_api"
-        return "yt_dlp"
-
-    def resolve_youtube_data_api_key(self) -> str | None:
-        return self.youtube_data_api_key or self.google_api_key
 
     def _infer_default_llm(self) -> str:
         """

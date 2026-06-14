@@ -46,7 +46,7 @@ async def test_create_task_enqueues_a_job(client, db_session):
         "/tasks/",
         headers={"x-supoclip-user-id": "user-1"},
         json={
-            "source": {"url": "https://www.youtube.com/watch?v=demo"},
+            "source": {"url": "upload://demo.mp4"},
             "font_options": {"font_color": "#abcdef", "font_size": 18},
         },
     )

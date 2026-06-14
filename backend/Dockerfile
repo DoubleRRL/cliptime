@@ -1,17 +1,11 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
-# Install system dependencies including ffmpeg and unzip (for deno)
+# Install system dependencies including ffmpeg
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
-    unzip \
     && rm -rf /var/lib/apt/lists/*
-
-# Install deno (required by yt-dlp for YouTube JS challenge solving)
-RUN curl -fsSL https://deno.land/install.sh | sh
-ENV DENO_DIR=/root/.deno
-ENV PATH="/root/.deno/bin:${PATH}"
 
 # Install uv package manager
 RUN pip install uv
@@ -24,11 +18,6 @@ COPY pyproject.toml uv.lock* ./
 
 # Create virtual environment and install dependencies using uv sync
 RUN uv venv .venv && uv sync
-
-# Force update yt-dlp to the absolute latest version to handle YouTube API changes
-# Also install from git to get the very latest commits
-RUN uv pip install --upgrade --force-reinstall yt-dlp
-RUN uv pip install --upgrade --force-reinstall "yt-dlp[default]"
 
 # Copy source code and database migrations
 COPY src/ ./src/

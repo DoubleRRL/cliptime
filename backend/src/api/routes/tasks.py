@@ -17,6 +17,7 @@ from pathlib import Path
 from ...database import get_db
 from ...database import AsyncSessionLocal
 from ...services.task_service import TaskService
+from ...services.video_service import VideoService
 from ..deps import get_current_user_id
 from ...workers.job_queue import JobQueue
 from ...workers.progress import ProgressTracker
@@ -172,13 +173,20 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     if not raw_source or not raw_source.get("url"):
         raise HTTPException(status_code=400, detail="Source URL is required")
 
+    source_url = str(raw_source["url"]).strip()
+    if VideoService.is_youtube_url(source_url):
+        raise HTTPException(
+            status_code=400,
+            detail="YouTube URLs are no longer supported. Upload a video file instead.",
+        )
+
     try:
         task_service = TaskService(db)
 
         # Create task
         task_id = await task_service.create_task_with_source(
             user_id=user_id,
-            url=raw_source["url"],
+            url=source_url,
             title=raw_source.get("title"),
             font_family=font_family,
             font_size=font_size,
@@ -189,9 +197,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
         )
 
         # Get source type for worker
-        source_type = task_service.video_service.determine_source_type(
-            raw_source["url"]
-        )
+        source_type = task_service.video_service.determine_source_type(source_url)
 
         # Enqueue job for worker
         queue_adapter = getattr(request.app.state, "queue_adapter", JobQueue)
@@ -199,7 +205,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             "process_video_task",
             processing_mode,
             task_id,
-            raw_source["url"],
+            source_url,
             source_type,
             user_id,
             font_family,
@@ -218,7 +224,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
         await get_redis().set(
             f"task_source:{task_id}",
             json.dumps({
-                "url": raw_source["url"],
+                "url": source_url,
                 "source_type": source_type,
                 "output_format": output_format,
                 "add_subtitles": add_subtitles,
@@ -235,7 +241,9 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
         }
 
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        message = str(e)
+        status = 400 if "no longer supported" in message or "Only uploaded" in message else 404
+        raise HTTPException(status_code=status, detail=message)
     except Exception as e:
         logger.error(f"Error creating task: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating task: {str(e)}")

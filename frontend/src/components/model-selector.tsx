@@ -111,6 +111,16 @@ type ModelListProps = {
   onInstall: (model: string) => void;
 };
 
+function modelRowClasses(isSelected: boolean, disabled?: boolean) {
+  return cn(
+    "rounded-md border px-2.5 py-2 transition-colors",
+    disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
+    isSelected
+      ? "border-primary/35 bg-primary/10 text-foreground"
+      : "border-transparent hover:bg-muted/50",
+  );
+}
+
 function ModelList({
   loading,
   value,
@@ -204,11 +214,7 @@ function ModelList({
                     onSelect(rec.model);
                   }
                 }}
-                className={cn(
-                  "cursor-pointer rounded-md px-2.5 py-2 transition-colors",
-                  disabled && "cursor-not-allowed opacity-60",
-                  isSelected ? "bg-accent" : "hover:bg-accent/50",
-                )}
+                className={modelRowClasses(isSelected, disabled)}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-left text-sm">
@@ -294,7 +300,10 @@ function ModelList({
         type="button"
         disabled={disabled}
         onClick={() => onSelect(null)}
-        className="mt-1 flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+        className={cn(
+          "mt-1 flex w-full items-center justify-between text-left text-sm",
+          modelRowClasses(!value, disabled),
+        )}
       >
         <span>
           <span className="font-medium">Default</span>
@@ -326,13 +335,18 @@ function ModelList({
               , then run <code className="text-[10px]">ollama serve</code>.
             </p>
           )}
-          {otherInstalled.map((entry) => (
+          {otherInstalled.map((entry) => {
+            const isSelected = value === entry.model;
+            return (
             <button
               key={entry.model}
               type="button"
               disabled={disabled}
               onClick={() => onSelect(entry.model)}
-              className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+              className={cn(
+                "flex w-full items-center justify-between text-left text-sm",
+                modelRowClasses(isSelected, disabled),
+              )}
             >
               <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
                 <span className="break-words">{entry.name}</span>
@@ -340,9 +354,10 @@ function ModelList({
                   {entry.size_gb} GB
                 </span>
               </span>
-              {value === entry.model && <Check className="h-4 w-4 shrink-0 text-primary" />}
+              {isSelected && <Check className="h-4 w-4 shrink-0 text-primary" />}
             </button>
-          ))}
+            );
+          })}
         </>
       )}
 
@@ -351,21 +366,27 @@ function ModelList({
           <p className="px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             Cloud
           </p>
-          {cloudModels.map((cloud) => (
+          {cloudModels.map((cloud) => {
+            const isSelected = value === cloud.model;
+            return (
             <button
               key={cloud.model}
               type="button"
               disabled={disabled}
               onClick={() => onSelect(cloud.model)}
-              className="flex w-full items-center justify-between rounded-md px-2.5 py-2 text-left text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+              className={cn(
+                "flex w-full items-center justify-between text-left text-sm",
+                modelRowClasses(isSelected, disabled),
+              )}
             >
               <span className="flex items-center gap-2">
                 <Cloud className="h-3.5 w-3.5 opacity-50" />
                 {cloud.display_name}
               </span>
-              {value === cloud.model && <Check className="h-4 w-4 text-primary" />}
+              {isSelected && <Check className="h-4 w-4 text-primary" />}
             </button>
-          ))}
+            );
+          })}
         </>
       )}
     </>
@@ -548,7 +569,7 @@ export function ModelSelector({
   if (variant === "inline") {
     return (
       <div className={cn("space-y-1.5", className)}>
-        <div className="max-h-64 overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1.5">
+        <div className="max-h-[min(70vh,520px)] overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1.5">
           <ModelList {...listProps} />
         </div>
       </div>
@@ -576,7 +597,7 @@ export function ModelSelector({
           align="start"
           side="bottom"
           collisionPadding={16}
-          className="z-[100] w-[min(340px,calc(100vw-2rem))] max-h-[min(70vh,420px,var(--radix-popover-content-available-height))] overflow-y-auto overscroll-contain p-1.5"
+          className="z-[100] w-[min(340px,calc(100vw-2rem))] max-h-[min(85vh,680px)] overflow-y-auto overscroll-contain p-1.5"
           sideOffset={6}
         >
           <ModelList {...listProps} />

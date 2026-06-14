@@ -53,8 +53,8 @@ async def create_source(
     *,
     source_id: str | None = None,
     title: str = "Seeded Source",
-    source_type: str = "youtube",
-    url: str = "https://www.youtube.com/watch?v=seeded",
+    source_type: str = "video_url",
+    url: str = "upload://seed.mp4",
 ):
     source_id = source_id or str(uuid4())
     await session.execute(

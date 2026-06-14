@@ -37,8 +37,8 @@ async def process_video_task(
     Args:
         ctx: arq context (provides Redis connection and other utilities)
         task_id: Task ID to update
-        url: Video URL or file path
-        source_type: "youtube" or "upload"
+        url: Uploaded video reference (`upload://…`) or local path
+        source_type: Always `video_url` for new tasks
         user_id: User ID who created the task
         font_family: Font family for subtitles
         font_size: Font size for subtitles
@@ -128,7 +128,7 @@ async def process_video_task(
 
                 error_code = "task_error"
                 lowered = str(e).lower()
-                if "download" in lowered or "youtube" in lowered:
+                if "video file not found" in lowered or "upload" in lowered:
                     error_code = "download_error"
                 elif "transcript" in lowered or "transcribe" in lowered:
                     error_code = "transcription_error"

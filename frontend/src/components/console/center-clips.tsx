@@ -91,7 +91,7 @@ export function CenterClips({
           animate={{ opacity: 1, y: 0 }}
           className="max-w-sm text-[var(--console-text-muted)]"
         >
-          Start a session from the left rail — paste a YouTube link or drop a video file.
+          Start a session from the left rail — upload a video file to begin.
         </motion.p>
       </main>
     );

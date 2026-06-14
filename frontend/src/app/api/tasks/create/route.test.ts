@@ -46,7 +46,7 @@ describe("/api/tasks/create", () => {
     );
 
     const payload = {
-      source: { url: "https://www.youtube.com/watch?v=demo" },
+      source: { url: "upload://demo.mp4" },
     };
 
     const response = await POST(

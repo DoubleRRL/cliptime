@@ -68,13 +68,13 @@ export default async function globalSetup() {
 
   const completedSource = await prisma.source.create({
     data: {
-      type: "youtube",
+      type: "video_url",
       title: "Seeded marketing walkthrough",
     },
   });
   const queuedSource = await prisma.source.create({
     data: {
-      type: "youtube",
+      type: "video_url",
       title: "Queued seed source",
     },
   });

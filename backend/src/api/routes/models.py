@@ -195,11 +195,22 @@ def _ollama_root_url() -> str:
 
 
 def _psutil_system_specs() -> Dict[str, Any]:
-    import psutil
-
-    total_ram_gb = round(psutil.virtual_memory().total / (1024**3), 1)
+    config = get_config()
     machine = platform.machine()
     system_name = platform.system()
+    total_ram_gb = config.host_total_ram_gb
+
+    try:
+        import psutil
+
+        total_ram_gb = round(psutil.virtual_memory().total / (1024**3), 1)
+        spec_source = "psutil"
+    except ImportError:
+        logger.warning("psutil not installed; using configured or default RAM for recommendations")
+        if total_ram_gb is None:
+            total_ram_gb = 16.0
+        spec_source = "configured" if config.host_total_ram_gb else "default"
+
     return {
         "platform": system_name.lower(),
         "machine": machine,
@@ -209,7 +220,7 @@ def _psutil_system_specs() -> Dict[str, Any]:
         "has_gpu": False,
         "gpu_name": None,
         "gpu_vram_gb": None,
-        "spec_source": "psutil",
+        "spec_source": spec_source,
     }
 
 

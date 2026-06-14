@@ -86,7 +86,9 @@ class TaskService:
             "analysis_error": (
                 "AI clip selection failed. Try LLM=ollama:qwen2.5:latest or a shorter test video."
             ),
-            "download_error": "Couldn't download the video. Check the URL and try again.",
+            "download_error": (
+                "Couldn't load the uploaded video. Re-upload the file and try again."
+            ),
             "render_error": "Clip rendering failed. Check worker logs for details.",
             "cancelled": "Processing was cancelled.",
         }
@@ -150,13 +152,13 @@ class TaskService:
         if not await self.task_repo.user_exists(self.db, user_id):
             raise ValueError(f"User {user_id} not found")
 
-        # Determine source type
+        # Determine source type (upload-only)
         source_type = self.video_service.determine_source_type(url)
 
-        # Get or generate title
         if not title:
-            if source_type == "youtube":
-                title = await self.video_service.get_video_title(url)
+            if url.startswith(UPLOAD_URL_PREFIX):
+                filename = Path(url.removeprefix(UPLOAD_URL_PREFIX)).name
+                title = Path(filename).stem or "Uploaded Video"
             else:
                 title = "Uploaded Video"
 
@@ -486,7 +488,7 @@ class TaskService:
                 raise
             error_code = "task_error"
             message = str(e).lower()
-            if "download" in message or "youtube" in message:
+            if "video file not found" in message or "upload" in message:
                 error_code = "download_error"
             elif "transcript" in message or "transcribe" in message:
                 error_code = "transcription_error"
@@ -691,16 +693,11 @@ class TaskService:
         if not clips:
             return
 
-        video_path: Path
-        if source_type == "youtube":
-            downloaded = await self.video_service.download_video(source_url)
-            if not downloaded:
-                raise ValueError("Failed to download source video for regeneration")
-            video_path = Path(downloaded)
-        else:
-            video_path = self.video_service.resolve_local_video_path(source_url)
-            if not video_path.exists():
-                raise ValueError("Source video file no longer exists")
+        self.video_service.ensure_local_source_type(source_type)
+
+        video_path = self.video_service.resolve_local_video_path(source_url)
+        if not video_path.exists():
+            raise ValueError("Source video file no longer exists")
 
         segments = [
             {
@@ -1216,6 +1213,8 @@ class TaskService:
         cache_entry = await self.cache_repo.get_cache(self.db, cache_key)
         transcript = (cache_entry or {}).get("transcript_text")
 
+        self.video_service.ensure_local_source_type(source_type)
+
         video_path: Optional[Path] = None
         cached_video = (cache_entry or {}).get("video_path")
         if cached_video:
@@ -1223,15 +1222,7 @@ class TaskService:
             if candidate.exists():
                 video_path = candidate
 
-        if source_type == "youtube":
-            if video_path is None:
-                downloaded = await self.video_service.download_video(
-                    source_url, task_id=task_id
-                )
-                if not downloaded:
-                    raise ValueError("Failed to download source video")
-                video_path = Path(downloaded)
-        else:
+        if video_path is None:
             video_path = self.video_service.resolve_local_video_path(source_url)
             if not video_path.exists():
                 raise ValueError("Source video file no longer exists")

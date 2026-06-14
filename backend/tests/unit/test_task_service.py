@@ -12,25 +12,26 @@ def test_humanize_error_message_maps_transcription_error():
 
 
 @pytest.mark.asyncio
-async def test_create_task_with_source_creates_queued_task(monkeypatch):
+async def test_create_task_with_source_creates_queued_task():
     service = TaskService(db=AsyncMock())
     service.task_repo.user_exists = AsyncMock(return_value=True)
     service.source_repo.create_source = AsyncMock(return_value="source-1")
     service.task_repo.create_task = AsyncMock(return_value="task-1")
-    monkeypatch.setattr(
-        service.video_service,
-        "determine_source_type",
-        lambda _url: "youtube",
-    )
-    service.video_service.get_video_title = AsyncMock(return_value="Seeded title")
 
     task_id = await service.create_task_with_source(
         user_id="user-1",
-        url="https://www.youtube.com/watch?v=demo",
+        url="upload://demo.mp4",
     )
 
     assert task_id == "task-1"
+    service.source_repo.create_source.assert_awaited_once_with(
+        service.db,
+        source_type="video_url",
+        title="demo",
+        url="upload://demo.mp4",
+    )
     service.task_repo.create_task.assert_awaited_once()
+
 
 @pytest.mark.asyncio
 async def test_create_task_with_source_requires_existing_user():
@@ -40,7 +41,7 @@ async def test_create_task_with_source_requires_existing_user():
     with pytest.raises(ValueError):
         await service.create_task_with_source(
             user_id="missing-user",
-            url="https://example.com/video.mp4",
+            url="upload://video.mp4",
         )
 
 
@@ -94,8 +95,8 @@ async def test_process_task_completes_successfully():
 
     result = await service.process_task(
         task_id="task-1",
-        url="https://www.youtube.com/watch?v=demo",
-        source_type="youtube",
+        url="upload://source.mp4",
+        source_type="video_url",
     )
 
     assert result["clips_count"] == 1
@@ -144,8 +145,8 @@ async def test_process_task_keeps_generated_clips_standalone():
 
     result = await service.process_task(
         task_id="task-1",
-        url="https://www.youtube.com/watch?v=demo",
-        source_type="youtube",
+        url="upload://source.mp4",
+        source_type="video_url",
     )
 
     assert result["clips_count"] == 2

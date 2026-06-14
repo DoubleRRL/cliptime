@@ -9,7 +9,7 @@ import { MotionFadeIn } from "@/components/motion-primitives";
 
 export interface CaptionPreviewSidebarProps {
   previewThumbnailUrl?: string | null;
-  previewMode?: "youtube" | "upload" | "source";
+  previewMode?: "upload" | "source";
   fontFamily: string;
   fontSize: number;
   fontColor: string;

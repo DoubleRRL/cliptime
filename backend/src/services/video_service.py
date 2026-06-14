@@ -11,12 +11,6 @@ import asyncio
 import time
 
 from ..utils.async_helpers import run_in_thread
-from ..youtube_utils import (
-    async_download_youtube_video,
-    async_get_youtube_video_info,
-    async_get_youtube_video_title,
-    get_youtube_video_id,
-)
 from ..video_utils import (
     get_video_transcript,
     create_clips_with_transitions,
@@ -31,6 +25,7 @@ from ..config import Config
 logger = logging.getLogger(__name__)
 config = Config()
 UPLOAD_URL_PREFIX = "upload://"
+YOUTUBE_HOST_MARKERS = ("youtube.com", "youtu.be", "youtube-nocookie.com")
 
 
 class VideoService:
@@ -62,32 +57,29 @@ class VideoService:
         return Path(url)
 
     @staticmethod
-    async def download_video(url: str, task_id: Optional[str] = None) -> Optional[Path]:
-        """
-        Download a YouTube video asynchronously.
-        """
-        logger.info(f"Starting video download: {url}")
-        video_path = await async_download_youtube_video(url, 3, task_id)
-
-        if not video_path:
-            logger.error(f"Failed to download video: {url}")
-            return None
-
-        logger.info(f"Video downloaded successfully: {video_path}")
-        return video_path
+    def is_youtube_url(url: str) -> bool:
+        lower = url.strip().lower()
+        return any(marker in lower for marker in YOUTUBE_HOST_MARKERS)
 
     @staticmethod
-    async def get_video_title(url: str) -> str:
-        """
-        Get video title asynchronously.
-        Returns a default title if retrieval fails.
-        """
-        try:
-            title = await async_get_youtube_video_title(url)
-            return title or "YouTube Video"
-        except Exception as e:
-            logger.warning(f"Failed to get video title: {e}")
-            return "YouTube Video"
+    def validate_source_url(url: str) -> None:
+        """Reject unsupported sources before task creation."""
+        if VideoService.is_youtube_url(url):
+            raise ValueError(
+                "YouTube URLs are no longer supported. Upload a video file instead."
+            )
+        if url.startswith(UPLOAD_URL_PREFIX):
+            return
+        if Path(url).exists():
+            return
+        raise ValueError(
+            "Only uploaded videos are supported. Upload a file before starting a session."
+        )
+
+    @staticmethod
+    def ensure_local_source_type(source_type: str) -> None:
+        if source_type == "youtube":
+            raise ValueError("YouTube sources are no longer supported")
 
     @staticmethod
     async def generate_transcript(
@@ -424,9 +416,9 @@ class VideoService:
 
     @staticmethod
     def determine_source_type(url: str) -> str:
-        """Determine if source is YouTube or uploaded file."""
-        video_id = get_youtube_video_id(url)
-        return "youtube" if video_id else "video_url"
+        """Uploaded files use the video_url source type."""
+        VideoService.validate_source_url(url)
+        return "video_url"
 
     @staticmethod
     async def process_video_complete(
@@ -460,24 +452,10 @@ class VideoService:
             if progress_callback:
                 await progress_callback(5, "Loading & validating video...", "processing")
 
-            if source_type == "youtube":
-                video_info = await async_get_youtube_video_info(url, task_id=task_id)
-                if video_info:
-                    duration = video_info.get("duration", 0)
-                    if duration and duration > config.max_video_duration:
-                        mins = config.max_video_duration // 60
-                        raise Exception(
-                            f"Video is too long ({duration // 60} min). "
-                            f"Maximum allowed duration is {mins} minutes."
-                        )
-
-                video_path = await VideoService.download_video(url, task_id=task_id)
-                if not video_path:
-                    raise Exception("Failed to download video")
-            else:
-                video_path = VideoService.resolve_local_video_path(url)
-                if not video_path.exists():
-                    raise Exception("Video file not found")
+            VideoService.ensure_local_source_type(source_type)
+            video_path = VideoService.resolve_local_video_path(url)
+            if not video_path.exists():
+                raise Exception("Video file not found")
 
             # Post-download duration guard (catches cases where preflight info was unavailable)
             file_duration = await run_in_thread(

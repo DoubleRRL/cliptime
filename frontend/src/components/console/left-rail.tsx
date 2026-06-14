@@ -168,7 +168,7 @@ export function LeftRail({
             )}
             {sessions.length === 0 && !loading && (
               <li className="rounded-xl border border-dashed border-[var(--console-border)] px-3 py-6 text-center text-xs text-[var(--console-text-muted)]">
-                No sessions yet. Start one with a YouTube link or video upload.
+                No sessions yet. Upload a video to start clipping.
               </li>
             )}
           </ul>
