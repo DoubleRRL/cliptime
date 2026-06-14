@@ -66,7 +66,7 @@ describe("ModelSelector", () => {
   beforeEach(() => {
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) => {
+      vi.fn((url: string, init?: RequestInit) => {
         if (url.includes("/recommendations")) {
           return Promise.resolve({
             ok: true,
@@ -77,6 +77,19 @@ describe("ModelSelector", () => {
           return Promise.resolve({
             ok: true,
             json: async () => mockInstalled,
+          });
+        }
+        if (url.includes("/api/preferences")) {
+          if (init?.method === "PATCH") {
+            const body = JSON.parse(String(init.body));
+            return Promise.resolve({
+              ok: true,
+              json: async () => ({ llmModel: body.llmModel ?? null }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ llmModel: null }),
           });
         }
         return Promise.reject(new Error(`Unexpected fetch: ${url}`));
@@ -137,5 +150,83 @@ describe("ModelSelector", () => {
     expect(screen.getByText("Top pick for 16 GB laptops.")).toBeInTheDocument();
     await user.click(screen.getByText("Top pick for 16 GB laptops."));
     expect(onChange).toHaveBeenCalledWith("ollama:gemma4:e4b");
+  });
+
+  it("saves the selected model as the default preference", async () => {
+    const onDefaultSaved = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <ModelSelector
+        variant="inline"
+        value="ollama:gemma4:e2b"
+        onChange={vi.fn()}
+        onDefaultSaved={onDefaultSaved}
+      />,
+    );
+
+    const checkbox = await screen.findByRole("checkbox", {
+      name: /set as default for new sessions/i,
+    });
+    await user.click(checkbox);
+
+    await waitFor(() => {
+      expect(onDefaultSaved).toHaveBeenCalledWith("ollama:gemma4:e2b");
+    });
+    expect(screen.getByText("Default for new sessions")).toBeInTheDocument();
+  });
+
+  it("disables the default checkbox until a model is selected", async () => {
+    render(<ModelSelector variant="inline" value={null} onChange={vi.fn()} />);
+
+    const checkbox = await screen.findByRole("checkbox");
+    expect(checkbox).toBeDisabled();
+    expect(screen.getByText("Select a model above first")).toBeInTheDocument();
+  });
+
+  it("shows the API error when saving the default model fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url.includes("/recommendations")) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => mockRecommendations,
+          });
+        }
+        if (url.includes("/installed")) {
+          return Promise.resolve({
+            ok: true,
+            json: async () => mockInstalled,
+          });
+        }
+        if (url.includes("/api/preferences")) {
+          if (init?.method === "PATCH") {
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              json: async () => ({ error: "Internal server error" }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ llmModel: null }),
+          });
+        }
+        return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(
+      <ModelSelector variant="inline" value="ollama:gemma4:e2b" onChange={vi.fn()} />,
+    );
+
+    const checkbox = await screen.findByRole("checkbox", {
+      name: /set as default for new sessions/i,
+    });
+    await user.click(checkbox);
+
+    expect(await screen.findByText("Internal server error")).toBeInTheDocument();
   });
 });

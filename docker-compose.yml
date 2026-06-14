@@ -50,7 +50,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./backend/migrations:/app/migrations
-      - uploads:/app/uploads
+      - ./uploads:/app/uploads
       - ./backend/fonts:/app/fonts
       - ./backend/transitions:/app/transitions
     extra_hosts:
@@ -60,6 +60,7 @@ services:
       - PYTHONUNBUFFERED=1
       - DATABASE_URL=postgresql+asyncpg://supoclip:supoclip_password@postgres:5432/supoclip
       - TEMP_DIR=/app/uploads
+      - STORAGE_HOST_PATH=${STORAGE_HOST_PATH:-}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -124,7 +125,7 @@ services:
     volumes:
       - ./backend/src:/app/src
       - ./backend/migrations:/app/migrations
-      - uploads:/app/uploads
+      - ./uploads:/app/uploads
       - ./backend/fonts:/app/fonts
       - ./backend/transitions:/app/transitions
     extra_hosts:
@@ -189,8 +190,6 @@ services:
       retries: 3
 
 volumes:
-  uploads:
-    driver: local
   redis_data:
     driver: local
   postgres_data:

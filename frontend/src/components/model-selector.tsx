@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -71,6 +72,10 @@ type ModelSelectorProps = {
   disabled?: boolean;
   className?: string;
   variant?: "popover" | "inline";
+  showDefaultCheckbox?: boolean;
+  onDefaultSaved?: (model: string | null) => void;
+  /** Fires once when recommendations load and parent value is still null. */
+  onSuggestedModel?: (model: string) => void;
 };
 
 const FIT_LABELS: Record<ModelRecommendation["fit"], { label: string; className: string }> = {
@@ -393,12 +398,76 @@ function ModelList({
   );
 }
 
+function modelsMatch(a: string | null | undefined, b: string | null | undefined) {
+  return (a ?? null) === (b ?? null);
+}
+
+type DefaultModelCheckboxProps = {
+  value: string | null;
+  savedDefault: string | null;
+  disabled?: boolean;
+  saving: boolean;
+  error: string | null;
+  onToggle: (checked: boolean) => void;
+};
+
+function DefaultModelCheckbox({
+  value,
+  savedDefault,
+  disabled,
+  saving,
+  error,
+  onToggle,
+}: DefaultModelCheckboxProps) {
+  const checked = Boolean(value) && modelsMatch(value, savedDefault);
+  const checkboxId = "model-selector-default";
+  const checkboxDisabled = disabled || saving || !value;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 py-2">
+        <Checkbox
+          id={checkboxId}
+          checked={checked}
+          disabled={checkboxDisabled}
+          onCheckedChange={(next) => onToggle(next === true)}
+          className="mt-0.5"
+        />
+        <label
+          htmlFor={checkboxId}
+          className={cn(
+            "text-xs leading-snug text-muted-foreground",
+            checkboxDisabled ? "cursor-not-allowed" : "cursor-pointer",
+          )}
+        >
+          {saving
+            ? "Saving default model…"
+            : !value
+              ? "Select a model above first"
+              : checked
+                ? "Default for new sessions"
+                : "Set as default for new sessions"}
+          {value ? (
+            <span className="mt-0.5 block text-[11px] text-foreground/80">
+              {shortModelLabel(value)}
+            </span>
+          ) : null}
+        </label>
+      </div>
+      {error && <p className="text-[11px] text-red-500">{error}</p>}
+    </div>
+  );
+}
+
 export function ModelSelector({
   value,
   onChange,
   disabled,
   className,
   variant = "popover",
+  showDefaultCheckbox = true,
+  onDefaultSaved,
+  onSuggestedModel,
 }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -411,7 +480,21 @@ export function ModelSelector({
   const [bestPick, setBestPick] = useState<string | null>(null);
   const [recsError, setRecsError] = useState<string | null>(null);
   const [pull, setPull] = useState<PullState | null>(null);
+  const [savedDefault, setSavedDefault] = useState<string | null>(null);
+  const [defaultSaving, setDefaultSaving] = useState(false);
+  const [defaultError, setDefaultError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const loadSavedDefault = useCallback(async () => {
+    try {
+      const response = await fetch("/api/preferences", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      setSavedDefault(data.llmModel ? String(data.llmModel) : null);
+    } catch {
+      // Preferences are optional; selector still works without them.
+    }
+  }, []);
 
   const loadModels = useCallback(async () => {
     setLoading(true);
@@ -449,8 +532,59 @@ export function ModelSelector({
 
   useEffect(() => {
     void loadModels();
+    if (showDefaultCheckbox) {
+      void loadSavedDefault();
+    }
     return () => abortRef.current?.abort();
-  }, [loadModels]);
+  }, [loadModels, loadSavedDefault, showDefaultCheckbox]);
+
+  useEffect(() => {
+    if (loading || value) return;
+    const suggested = bestPick || defaultModel || null;
+    if (suggested) {
+      onSuggestedModel?.(suggested);
+    }
+  }, [loading, value, bestPick, defaultModel, onSuggestedModel]);
+
+  const handleDefaultToggle = useCallback(
+    async (checked: boolean) => {
+      if (checked && !value) return;
+
+      setDefaultSaving(true);
+      setDefaultError(null);
+      try {
+        const response = await fetch("/api/preferences", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ llmModel: checked ? value : null }),
+        });
+        if (!response.ok) {
+          let message = "Couldn't save default model. Try again.";
+          try {
+            const errorData = await response.json();
+            if (errorData?.error) {
+              message = String(errorData.error);
+            }
+          } catch {
+            // Ignore malformed error bodies.
+          }
+          console.error(`Failed to save default model (${response.status})`);
+          setDefaultError(message);
+          return;
+        }
+        const data = await response.json();
+        const nextDefault = data.llmModel ? String(data.llmModel) : null;
+        setSavedDefault(nextDefault);
+        onDefaultSaved?.(nextDefault);
+      } catch (error) {
+        console.error("Failed to save default model", error);
+        setDefaultError("Couldn't save default model. Try again.");
+      } finally {
+        setDefaultSaving(false);
+      }
+    },
+    [onDefaultSaved, value],
+  );
 
   const installModel = useCallback(
     async (model: string) => {
@@ -566,12 +700,24 @@ export function ModelSelector({
     onInstall: installModel,
   };
 
+  const defaultCheckbox = showDefaultCheckbox ? (
+    <DefaultModelCheckbox
+      value={value}
+      savedDefault={savedDefault}
+      disabled={disabled}
+      saving={defaultSaving}
+      error={defaultError}
+      onToggle={(checked) => void handleDefaultToggle(checked)}
+    />
+  ) : null;
+
   if (variant === "inline") {
     return (
       <div className={cn("space-y-1.5", className)}>
         <div className="max-h-[min(70vh,520px)] overflow-y-auto overscroll-contain rounded-md border border-border bg-background p-1.5">
           <ModelList {...listProps} />
         </div>
+        {defaultCheckbox}
       </div>
     );
   }
@@ -603,6 +749,7 @@ export function ModelSelector({
           <ModelList {...listProps} />
         </PopoverContent>
       </Popover>
+      {defaultCheckbox}
     </div>
   );
 }

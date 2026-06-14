@@ -1,3 +1,10 @@
+export type OrphanFile = {
+  path: string;
+  relative_path: string;
+  name: string;
+  size_bytes: number;
+};
+
 export type StorageSummary = {
   total_bytes: number;
   breakdown: {
@@ -13,6 +20,11 @@ export type StorageSummary = {
     orphan_files: number;
   };
   temp_dir: string;
+  host_path: string;
+  orphan_paths: string[];
+  orphan_files: OrphanFile[];
+  removed_files?: number;
+  reclaimed_bytes?: number;
 };
 
 export const STORAGE_BUCKETS: Array<{

@@ -59,7 +59,7 @@ def caption_position_y_at_time(
     t_s: float,
     timeline: List[LayoutSegment],
     *,
-    solo_y: float = 0.75,
+    solo_y: float = 0.77,
     dual_y: float = 0.50,
 ) -> float:
     """Return subtitle Y fraction for clip-relative time ``t_s`` (seconds)."""

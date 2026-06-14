@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -13,6 +13,11 @@ import { Loader2, Upload } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { ModelSelector } from "@/components/model-selector";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
+import {
+  buildCaptionTaskOptions,
+  RIVERSIDE_CAPTION_DEFAULTS,
+  type CaptionTaskOptions,
+} from "@/lib/caption-defaults";
 
 type NewSessionDialogProps = {
   open: boolean;
@@ -27,20 +32,42 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [llmModel, setLlmModel] = useState<string | null>(null);
+  const [captionOptions, setCaptionOptions] = useState<CaptionTaskOptions>(
+    buildCaptionTaskOptions(null),
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSuggestedModel = useCallback((model: string) => {
+    setLlmModel((current) => current ?? model);
+  }, []);
 
   const isBusy = isSubmitting || isUploading;
   const canStart = Boolean(uploadedPath);
 
-  // Seed the selector with the user's saved default model.
   useEffect(() => {
     if (!open) return;
     fetch("/api/preferences", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (data?.llmModel) setLlmModel(String(data.llmModel));
+        setCaptionOptions(
+          buildCaptionTaskOptions(
+            data
+              ? {
+                  fontFamily: data.fontFamily,
+                  fontSize: data.fontSize,
+                  fontColor: data.fontColor,
+                  highlightColor: data.highlightColor ?? data.pillColor,
+                  backgroundColor: data.pillColor,
+                  captionTemplate: data.captionTemplate,
+                }
+              : null,
+          ),
+        );
       })
-      .catch(() => undefined);
+      .catch(() => {
+        setCaptionOptions(buildCaptionTaskOptions(null));
+      });
   }, [open]);
 
   const reset = () => {
@@ -49,6 +76,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     setError(null);
     setIsSubmitting(false);
     setIsUploading(false);
+    setCaptionOptions(buildCaptionTaskOptions(null));
   };
 
   const createTask = async (videoUrl: string) => {
@@ -58,13 +86,13 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
       body: JSON.stringify({
         source: { url: videoUrl, title: null },
         font_options: {
-          font_family: "TikTokSans-Regular",
-          font_size: 48,
-          font_color: "#FFFFFF",
-          highlight_color: "#8B5CF6",
-          background_color: "#1A1A1ACC",
+          font_family: captionOptions.fontFamily,
+          font_size: captionOptions.fontSize,
+          font_color: captionOptions.fontColor,
+          highlight_color: captionOptions.highlightColor,
+          background_color: captionOptions.backgroundColor,
         },
-        caption_template: "riverside",
+        caption_template: captionOptions.captionTemplate,
         processing_mode: process.env.NEXT_PUBLIC_DEFAULT_PROCESSING_MODE || "quality",
         output_format: "vertical",
         add_subtitles: true,
@@ -179,9 +207,15 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
               variant="inline"
               value={llmModel}
               onChange={setLlmModel}
+              onSuggestedModel={handleSuggestedModel}
               disabled={isBusy}
             />
           </div>
+
+          <p className="text-[11px] text-[var(--console-text-muted)]">
+            Captions: {captionOptions.captionTemplate} · {captionOptions.fontSize}px base (
+            {RIVERSIDE_CAPTION_DEFAULTS.positionY * 100}% vertical)
+          </p>
 
           <Button
             type="button"

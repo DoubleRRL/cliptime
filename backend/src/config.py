@@ -24,6 +24,7 @@ class Config:
         self.clip_duration = int(os.getenv("CLIP_DURATION", "30"))  # seconds
 
         self.temp_dir = os.getenv("TEMP_DIR", "temp")
+        self.storage_host_path = self._get_optional_env("STORAGE_HOST_PATH")
 
         # Redis configuration
         self.redis_host = os.getenv("REDIS_HOST", "localhost")

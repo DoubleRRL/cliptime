@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { previewDisplayFontSize, RENDER_HEIGHT } from "@/lib/caption-fit";
 import { buildPreviewCaptionStyles, hexToRgba, isTransparentBackground } from "@/lib/caption-preview-styles";
+import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 
 export type CaptionStyleTemplate = {
   id: string;
@@ -85,7 +86,7 @@ export function CaptionStylePreview({
   const [activeWordIndex, setActiveWordIndex] = useState(0);
   const words = useMemo(() => buildWords(template, sampleWords), [template, sampleWords]);
   const showKaraoke = template?.animation === "karaoke";
-  const resolvedPositionY = positionY ?? template?.position_y ?? 0.75;
+  const resolvedPositionY = positionY ?? template?.position_y ?? RIVERSIDE_CAPTION_DEFAULTS.positionY;
   const pillStyle = Boolean(template?.pill_style);
   const boxStyle = Boolean(template?.background) && !pillStyle;
   const strokeWidth = template?.stroke_width ?? 0;

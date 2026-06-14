@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { ConsoleShell } from "@/components/console/console-shell";
 import type { ConsoleSession, ConsoleClip, ConsoleSessionSettings } from "@/components/console/types";
 import { useTaskProgress } from "@/hooks/use-task-progress";
+import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 
 const ACTIVE_SESSION_KEY = "supoclip:activeSessionId";
 const SESSION_PAGE_SIZE = 100;
@@ -130,7 +131,7 @@ export function ConsoleApp() {
     const rawClips = (task.clips || []) as Array<Record<string, unknown>>;
     setSessionSettings({
       fontFamily: String(task.font_family || "TikTokSans-Regular"),
-      fontSize: Number(task.font_size ?? 48),
+      fontSize: Number(task.font_size ?? RIVERSIDE_CAPTION_DEFAULTS.fontSize),
       fontColor: String(task.font_color || "#FFFFFF"),
       captionTemplate: String(task.caption_template || "riverside"),
     });

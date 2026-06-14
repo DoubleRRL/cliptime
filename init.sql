@@ -18,9 +18,9 @@ CREATE TABLE users (
     password_hash VARCHAR(255),
     -- Default font preferences
     default_font_family VARCHAR(100) DEFAULT 'TikTokSans-Regular',
-    default_font_size INTEGER DEFAULT 24,
+    default_font_size INTEGER DEFAULT 32,
     default_font_color VARCHAR(7) DEFAULT '#FFFFFF',
-    default_caption_template VARCHAR(50) DEFAULT 'default',
+    default_caption_template VARCHAR(50) DEFAULT 'riverside',
     default_highlight_color VARCHAR(9) DEFAULT '#8B5CF6',
     default_pill_color VARCHAR(9) DEFAULT '#1A1A1ACC',
     default_llm_model VARCHAR(200),

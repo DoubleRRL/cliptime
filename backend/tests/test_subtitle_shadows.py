@@ -17,7 +17,8 @@ class SubtitleShadowTests(unittest.TestCase):
         self.assertTrue(template.get("pill_style"))
         self.assertEqual(template.get("highlight_color"), "#8B5CF6")
         self.assertEqual(template.get("background_color"), "#1A1A1ACC")
-        self.assertEqual(template.get("bounce_duration"), 0.06)
+        self.assertEqual(template.get("font_size"), 32)
+        self.assertEqual(template.get("position_y"), 0.77)
 
     def test_opusclip_alias_resolves_to_riverside(self):
         template = get_template("opusclip")

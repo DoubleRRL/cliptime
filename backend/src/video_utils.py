@@ -1380,7 +1380,7 @@ def create_karaoke_subtitles(
                 video_height,
                 template,
                 processor.font_path,
-                position_y=template.get("position_y", 0.82),
+                position_y=template.get("position_y", 0.77),
                 layout_timeline=layout_timeline,
             )
             if premium_clips:

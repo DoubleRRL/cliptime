@@ -35,6 +35,7 @@ import {
   TEXT_BACKGROUND_PRESETS,
 } from "@/lib/caption-color-presets";
 import { resolveRenderFontSize } from "@/lib/caption-fit";
+import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { Download, Loader2, Trash2 } from "lucide-react";
@@ -191,12 +192,12 @@ export function ClipEditorModal({
   const [startDelta, setStartDelta] = useState(0);
   const [endDelta, setEndDelta] = useState(0);
   const [captionTemplate, setCaptionTemplate] = useState("riverside");
-  const [fontSize, setFontSize] = useState(48);
+  const [fontSize, setFontSize] = useState(RIVERSIDE_CAPTION_DEFAULTS.fontSize);
   const [fontColor, setFontColor] = useState("#FFFFFF");
   const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
   const [textBackgroundColor, setTextBackgroundColor] = useState(DEFAULT_TEXT_BACKGROUND_COLOR);
   const [emphasisCallouts, setEmphasisCallouts] = useState(true);
-  const [positionY, setPositionY] = useState(0.75);
+  const [positionY, setPositionY] = useState(RIVERSIDE_CAPTION_DEFAULTS.positionY);
   const [replaceOriginal, setReplaceOriginal] = useState(false);
   const [baseline, setBaseline] = useState<EditorBaseline | null>(null);
   const [previewToken, setPreviewToken] = useState(0);
@@ -257,12 +258,12 @@ export function ClipEditorModal({
       : {};
     const nextBaseline: EditorBaseline = {
       captionTemplate: templateId,
-      fontSize: templateDefaults.fontSize ?? sessionSettings?.fontSize ?? 48,
+      fontSize: templateDefaults.fontSize ?? sessionSettings?.fontSize ?? RIVERSIDE_CAPTION_DEFAULTS.fontSize,
       fontColor: templateDefaults.fontColor ?? sessionSettings?.fontColor ?? "#FFFFFF",
       highlightColor: templateDefaults.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR,
       textBackgroundColor:
         templateDefaults.textBackgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
-      positionY: templateDefaults.positionY ?? 0.75,
+      positionY: templateDefaults.positionY ?? RIVERSIDE_CAPTION_DEFAULTS.positionY,
       emphasisCallouts: templateDefaults.emphasisCallouts ?? true,
     };
     setStartDelta(0);

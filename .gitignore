@@ -4,10 +4,13 @@ __pycache__
 *.egg-info
 logs/
 temp/
+uploads/
 .env
 *.m4a
 frontend/e2e/.seed.json
 backend/fixtures/riverside-framing/test_slice.mp4
+backend/fixtures/riverside-framing/invisible_bookcase_troupe_jeans_stud.mp4
+backend/fixtures/riverside-framing/caption-measurements/
 
 # Dev media / processing sidecars at repo root
 /*.mp4

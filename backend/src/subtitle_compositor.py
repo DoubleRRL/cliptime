@@ -304,7 +304,7 @@ def create_premium_karaoke_clips(
     video_height: int,
     template: Dict,
     font_path: str,
-    position_y: float = 0.82,
+    position_y: float = 0.77,
     layout_timeline: Optional[List] = None,
 ) -> List:
     """Render premium/Riverside karaoke as PIL ImageClips with tight word timing."""

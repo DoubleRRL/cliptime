@@ -29,11 +29,20 @@ CACHE_SUFFIXES = (
 
 
 @dataclass
+class OrphanFileInfo:
+    path: str
+    relative_path: str
+    name: str
+    size_bytes: int
+
+
+@dataclass
 class StorageScanResult:
     total_bytes: int = 0
     breakdown: dict[str, int] = field(default_factory=dict)
     counts: dict[str, int] = field(default_factory=dict)
     orphan_paths: list[str] = field(default_factory=list)
+    orphan_files: list[OrphanFileInfo] = field(default_factory=list)
     temp_dir: str = ""
 
 
@@ -107,6 +116,7 @@ def scan_storage(temp_dir: Path, referenced_paths: set[Path]) -> StorageScanResu
         "orphans": 0,
     }
     orphan_paths: list[str] = []
+    orphan_files: list[OrphanFileInfo] = []
     total_bytes = 0
 
     if not root.exists():
@@ -115,6 +125,7 @@ def scan_storage(temp_dir: Path, referenced_paths: set[Path]) -> StorageScanResu
             breakdown=breakdown,
             counts={"orphan_files": 0},
             orphan_paths=[],
+            orphan_files=[],
             temp_dir=str(root),
         )
 
@@ -145,9 +156,25 @@ def scan_storage(temp_dir: Path, referenced_paths: set[Path]) -> StorageScanResu
         elif _is_cache_file(path):
             bucket = "orphans"
             orphan_paths.append(str(normalized))
+            orphan_files.append(
+                OrphanFileInfo(
+                    path=str(normalized),
+                    relative_path=_relative_to_root(normalized, root),
+                    name=path.name,
+                    size_bytes=size,
+                )
+            )
         else:
             bucket = "orphans"
             orphan_paths.append(str(normalized))
+            orphan_files.append(
+                OrphanFileInfo(
+                    path=str(normalized),
+                    relative_path=_relative_to_root(normalized, root),
+                    name=path.name,
+                    size_bytes=size,
+                )
+            )
 
         breakdown[bucket] += size
 
@@ -156,8 +183,30 @@ def scan_storage(temp_dir: Path, referenced_paths: set[Path]) -> StorageScanResu
         breakdown=breakdown,
         counts={"orphan_files": len(orphan_paths)},
         orphan_paths=orphan_paths,
+        orphan_files=sorted(orphan_files, key=lambda item: item.relative_path),
         temp_dir=str(root),
     )
+
+
+def _relative_to_root(path: Path, root: Path) -> str:
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return path.name
+
+
+def filter_orphan_paths(
+    requested_paths: Iterable[str], allowed_orphans: Iterable[str]
+) -> list[str]:
+    allowed = {_normalize_path(Path(raw)) for raw in allowed_orphans}
+    selected: list[str] = []
+    for raw in requested_paths:
+        if not raw:
+            continue
+        normalized = _normalize_path(Path(raw))
+        if normalized in allowed:
+            selected.append(str(normalized))
+    return selected
 
 
 async def collect_referenced_paths(db: AsyncSession, user_id: str) -> set[Path]:
@@ -201,7 +250,9 @@ async def collect_referenced_paths(db: AsyncSession, user_id: str) -> set[Path]:
     return build_referenced_paths(clip_paths, upload_urls, cache_video_paths)
 
 
-async def get_storage_summary(db: AsyncSession, user_id: str, temp_dir: Path) -> dict:
+async def get_storage_summary(
+    db: AsyncSession, user_id: str, temp_dir: Path, *, host_path: str | None = None
+) -> dict:
     referenced = await collect_referenced_paths(db, user_id)
     scan = scan_storage(temp_dir, referenced)
 
@@ -221,6 +272,16 @@ async def get_storage_summary(db: AsyncSession, user_id: str, temp_dir: Path) ->
         {"user_id": user_id},
     )
 
+    orphan_files = [
+        {
+            "path": item.path,
+            "relative_path": item.relative_path,
+            "name": item.name,
+            "size_bytes": item.size_bytes,
+        }
+        for item in scan.orphan_files
+    ]
+
     return {
         "total_bytes": scan.total_bytes,
         "breakdown": scan.breakdown,
@@ -230,6 +291,9 @@ async def get_storage_summary(db: AsyncSession, user_id: str, temp_dir: Path) ->
             "orphan_files": scan.counts.get("orphan_files", 0),
         },
         "temp_dir": scan.temp_dir,
+        "host_path": host_path or scan.temp_dir,
+        "orphan_paths": scan.orphan_paths,
+        "orphan_files": orphan_files,
     }
 
 

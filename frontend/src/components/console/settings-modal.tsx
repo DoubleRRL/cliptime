@@ -28,7 +28,9 @@ import { useEffectiveSession } from "@/hooks/use-effective-session";
 import { Type, Palette, CheckCircle, AlertCircle, Shield } from "lucide-react";
 import { ModelSelector } from "@/components/model-selector";
 import { StorageDetailsSection } from "@/components/console/storage-details-section";
+import { AppearanceSetting } from "@/components/console/appearance-setting";
 import { cn } from "@/lib/utils";
+import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 
 type SettingsSection = "defaults" | "storage" | "admin";
 
@@ -67,10 +69,10 @@ export function SettingsModal({
   onStorageChanged,
 }: SettingsModalProps) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
-  const [fontFamily, setFontFamily] = useState("TikTokSans-Regular");
-  const [fontSize, setFontSize] = useState(24);
-  const [fontColor, setFontColor] = useState("#FFFFFF");
-  const [captionTemplate, setCaptionTemplate] = useState("default");
+  const [fontFamily, setFontFamily] = useState(RIVERSIDE_CAPTION_DEFAULTS.fontFamily);
+  const [fontSize, setFontSize] = useState(RIVERSIDE_CAPTION_DEFAULTS.fontSize);
+  const [fontColor, setFontColor] = useState(RIVERSIDE_CAPTION_DEFAULTS.fontColor);
+  const [captionTemplate, setCaptionTemplate] = useState(RIVERSIDE_CAPTION_DEFAULTS.captionTemplate);
   const [llmModel, setLlmModel] = useState<string | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<CaptionTemplateOption[]>([]);
   const [availableFonts, setAvailableFonts] = useState<
@@ -205,7 +207,7 @@ export function SettingsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] w-[min(100vw-2rem,42rem)] flex-col overflow-hidden p-0">
+      <DialogContent className="console-theme flex max-h-[90vh] w-[min(100vw-2rem,42rem)] flex-col overflow-hidden border-[var(--console-border)] bg-[var(--console-beige)] p-0 text-[var(--console-text)]">
         <DialogHeader className="border-b border-border px-6 py-4">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
@@ -241,6 +243,10 @@ export function SettingsModal({
               </div>
             ) : section === "defaults" ? (
               <div className="space-y-6">
+                <AppearanceSetting />
+
+                <Separator />
+
                 <div>
                   <h3 className="text-sm font-semibold text-foreground">Default font settings</h3>
                   <p className="mt-1 text-sm text-muted-foreground">

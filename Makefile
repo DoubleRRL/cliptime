@@ -19,3 +19,7 @@ test-e2e:
 	cd frontend && $(FRONTEND_TEST_ENV) bun run test:e2e
 
 test-ci: test-backend test-frontend test-e2e
+
+open-uploads:
+	@mkdir -p uploads
+	@open uploads

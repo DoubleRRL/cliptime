@@ -29,7 +29,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "premium": True,
         "pill_style": True,
         "font_family": "TikTokSans-Regular",
-        "font_size": 48,
+        "font_size": 32,
         "font_color": "#FFFFFF",
         "highlight_color": "#8B5CF6",
         "background_color": "#1A1A1ACC",
@@ -43,7 +43,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "active_word_scale": 1.15,
         "bounce_duration": 0.06,
         "emphasis_callouts": True,
-        "position_y": 0.82,
+        "position_y": 0.77,
     },
     "hormozi": {
         "name": "Hormozi",

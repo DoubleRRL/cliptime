@@ -86,7 +86,7 @@ class CaptionPositionTests(unittest.TestCase):
             LayoutSegment(4000, 12000, "solo"),
         ]
         self.assertEqual(caption_position_y_at_time(1.0, timeline), 0.50)
-        self.assertEqual(caption_position_y_at_time(5.0, timeline), 0.75)
+        self.assertEqual(caption_position_y_at_time(5.0, timeline), 0.77)
 
 
 class VisualDualTimelineTests(unittest.TestCase):

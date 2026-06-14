@@ -8,7 +8,8 @@ Visual reference kit for matching SupoClip output to Riverside Magic Clip export
 |------|---------|
 | `target/` | **Where we're going** — stills from finished Riverside 9:16 export |
 | `source/` | **Where we're coming from** — stills from raw 1280×720 side-by-side upload |
-| `test_slice.mp4` | ~90s cut for fast pipeline iteration (gitignored) |
+| `invisible_bookcase_troupe_jeans_stud.mp4` | Short Riverside export for caption sizing QA (gitignored) |
+| `caption-measurements/` | Generated frames + overlay QA from `scripts/measure_riverside_captions.py` |
 
 ## Target stills (`apr23.mp4`)
 
@@ -25,6 +26,14 @@ Visual reference kit for matching SupoClip output to Riverside Magic Clip export
 | `source/side_by_side_laugh.jpg` | 17:24 | Both speakers laughing, grid layout |
 | `source/right_column_react.jpg` | 17:30 | Right column reacting |
 | `source/left_column_speaking.jpg` | 17:32 | Left column monologue |
+
+## Caption sizing reference
+
+`invisible_bookcase_troupe_jeans_stud.mp4` — 1080×1920 Riverside export used to calibrate template defaults (`font_size` base **32**, `position_y` **0.77**).
+
+```bash
+cd backend && uv run python scripts/measure_riverside_captions.py
+```
 
 ## Test slice
 

@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress";
 import { CornerOrbitLoader } from "@/components/corner-orbit-loader";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 import { formatLlmModel } from "@/lib/format-llm-model";
+import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 
 type CenterClipsProps = {
   className?: string;
@@ -99,7 +100,7 @@ export function CenterClips({
 
   const captionTemplate = sessionSettings?.captionTemplate ?? "riverside";
   const fontFamily = sessionSettings?.fontFamily ?? "TikTokSans-Regular";
-  const fontSize = sessionSettings?.fontSize ?? 48;
+  const fontSize = sessionSettings?.fontSize ?? RIVERSIDE_CAPTION_DEFAULTS.fontSize;
   const fontColor = sessionSettings?.fontColor ?? "#FFFFFF";
   const modelLabel = formatLlmModel(session?.llmModel);
 

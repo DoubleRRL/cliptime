@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { previewDisplayFontSize, RENDER_HEIGHT } from "@/lib/caption-fit";
 import { buildPreviewCaptionStyles, hexToRgba } from "@/lib/caption-preview-styles";
 import { cropToBackgroundStyle, panelToVerticalCrop, type SpeakerPanel } from "@/lib/preview-crop";
+import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 
 export interface CaptionTemplatePreview {
   id: string;
@@ -97,7 +98,7 @@ export default function UploadCaptionPreview({
       ? cropToBackgroundStyle(frameWidth, frameHeight, crop, PREVIEW_WIDTH, PREVIEW_HEIGHT)
       : null;
 
-  const positionY = template?.position_y ?? 0.75;
+  const positionY = template?.position_y ?? RIVERSIDE_CAPTION_DEFAULTS.positionY;
   const strokeWidth = template?.stroke_width ?? 0;
   const strokeColor = template?.stroke_color ?? "#000000";
   const highlightColor = highlightColorProp ?? template?.highlight_color ?? "#8B5CF6";
