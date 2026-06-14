@@ -63,7 +63,16 @@ class ProgressTracker:
             return json.loads(data)
         return None
 
-    async def clip_ready(self, clip_index: int, total_clips: int, clip_data: dict):
+    async def clip_ready(
+        self,
+        clip_index: int,
+        total_clips: int,
+        clip_data: dict,
+        *,
+        source_clip_id: Optional[str] = None,
+        replace: bool = False,
+        forked: bool = False,
+    ):
         """Notify that a clip has been saved and is ready to view."""
         data = {
             "task_id": self.task_id,
@@ -72,9 +81,28 @@ class ProgressTracker:
             "total_clips": total_clips,
             "clip": clip_data,
         }
+        if source_clip_id:
+            data["source_clip_id"] = source_clip_id
+        if replace:
+            data["replace"] = True
+        if forked:
+            data["forked"] = True
         await self.redis.publish(
             f"progress:{self.task_id}",
             json.dumps(data, default=str),
+        )
+
+    async def rerender_error(self, source_clip_id: str, message: str):
+        """Notify that a clip re-render failed."""
+        data = {
+            "task_id": self.task_id,
+            "event_type": "rerender_error",
+            "source_clip_id": source_clip_id,
+            "message": message,
+        }
+        await self.redis.publish(
+            f"progress:{self.task_id}",
+            json.dumps(data),
         )
 
     async def complete(self, message: str = "Complete!"):

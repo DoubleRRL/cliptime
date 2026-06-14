@@ -7,12 +7,14 @@ import { ClipVideoThumb } from "@/components/console/clip-video-thumb";
 import { DurationBadge, ScoreBadge } from "@/components/console/clip-thumb-badges";
 import { getClipDisplayTitle } from "@/lib/clip-display-title";
 import { pressable, springSnappy } from "@/lib/motion";
+import { CornerOrbitLoader } from "@/components/corner-orbit-loader";
 
 type ClipCardProps = {
   clip: ConsoleClip;
   videoSrc: string | null;
   width?: number;
   isActive?: boolean;
+  isRegenerating?: boolean;
   onClick?: () => void;
   className?: string;
   compact?: boolean;
@@ -23,6 +25,7 @@ export function ClipCard({
   videoSrc,
   width,
   isActive = false,
+  isRegenerating = false,
   onClick,
   className,
   compact = false,
@@ -44,18 +47,24 @@ export function ClipCard({
         "hover:border-[var(--console-clip-card-border-hover)] hover:shadow-lg",
         isActive &&
           "border-[var(--console-terracotta)] shadow-[0_0_0_1px_var(--console-terracotta)]",
+        isRegenerating && "opacity-75",
         className,
       )}
     >
       <div className="relative aspect-[9/16] w-full overflow-hidden rounded-xl bg-black">
         <ClipVideoThumb src={videoSrc} />
+        {isRegenerating && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+            <CornerOrbitLoader className="h-8 w-8" />
+          </div>
+        )}
         <ScoreBadge score={clip.viralityScore} />
         <DurationBadge durationSeconds={clip.durationSeconds} />
       </div>
 
       {!compact && (
-        <div className="mt-2 flex min-h-[2.25rem] w-full min-w-0 items-center overflow-hidden border-t border-[var(--console-clip-card-title-divider)] pt-2">
-          <p className="block w-full truncate text-sm font-semibold leading-snug text-[var(--console-text)]">
+        <div className="mt-2 flex min-h-[3rem] w-full min-w-0 items-start overflow-hidden border-t border-[var(--console-clip-card-title-divider)] pt-2">
+          <p className="line-clamp-2 w-full text-base font-semibold leading-snug text-[var(--console-text)]">
             {displayTitle}
           </p>
         </div>

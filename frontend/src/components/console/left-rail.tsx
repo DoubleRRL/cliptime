@@ -9,6 +9,7 @@ import { NewSessionDialog } from "@/components/console/new-session-dialog";
 import { SessionRow } from "@/components/console/session-row";
 import { ClipQueueRow } from "@/components/console/clip-queue-row";
 import { toast } from "sonner";
+import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +35,7 @@ type LeftRailProps = {
   onSessionCreated: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onSelectClip: (clipId: string) => void;
+  regeneratingClipId?: string | null;
 };
 
 export function LeftRail({
@@ -50,6 +52,7 @@ export function LeftRail({
   onSessionCreated,
   onDeleteSession,
   onSelectClip,
+  regeneratingClipId = null,
 }: LeftRailProps) {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -80,7 +83,11 @@ export function LeftRail({
           `/api/tasks/${taskId}/clips/${clip.id}/export?preset=tiktok`,
         );
         if (!response.ok) {
-          throw new Error(`Export failed for ${clip.filename || clip.id}`);
+          const parsed = await parseApiError(
+            response,
+            `Export failed for ${clip.filename || clip.id}`,
+          );
+          throw new Error(formatSupportMessage(parsed));
         }
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -179,6 +186,7 @@ export function LeftRail({
                     clip={clip}
                     videoSrc={clip.videoUrl || null}
                     isActive={clip.id === activeClipId}
+                    isRegenerating={clip.id === regeneratingClipId}
                     onSelect={() => onSelectClip(clip.id)}
                     onToggleSelected={() => toggleClip(clip.id)}
                   />

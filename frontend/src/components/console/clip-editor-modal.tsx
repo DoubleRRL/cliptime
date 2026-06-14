@@ -32,25 +32,45 @@ import { getScoreBadgeClass } from "@/lib/virality-score";
 import {
   FONT_COLOR_PRESETS,
   HIGHLIGHT_COLOR_PRESETS,
-  PILL_COLOR_PRESETS,
+  TEXT_BACKGROUND_PRESETS,
 } from "@/lib/caption-color-presets";
+import { resolveRenderFontSize } from "@/lib/caption-fit";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
-import { Loader2 } from "lucide-react";
+import { Download, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import {
+  applyCaptionTemplateDefaults,
+  getCaptionTemplateCapabilities,
+} from "@/lib/caption-template-capabilities";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const DEFAULT_HIGHLIGHT_COLOR = "#8B5CF6";
-const DEFAULT_PILL_COLOR = "#1A1A1ACC";
+const DEFAULT_TEXT_BACKGROUND_COLOR = "#1A1A1ACC";
+const RERENDER_TOAST_ID = "clip-rerender";
+const STYLE_PREVIEW_STORAGE_KEY = "cliptime:showStylePreview";
 
 type EditorBaseline = {
   captionTemplate: string;
   fontSize: number;
   fontColor: string;
   highlightColor: string;
-  pillColor: string;
+  textBackgroundColor: string;
   positionY: number;
+  emphasisCallouts: boolean;
 };
 
 type ClipEditorModalProps = {
@@ -61,6 +81,9 @@ type ClipEditorModalProps = {
   onOpenChange: (open: boolean) => void;
   onClipUpdated: (clip: ConsoleClip) => void;
   onClipCreated: (clip: ConsoleClip) => void;
+  onClipDeleted?: (clipId: string) => void;
+  onRegeneratingChange?: (clipId: string | null) => void;
+  taskApiUrl?: string;
 };
 
 function parseTimestamp(value: string): number {
@@ -159,36 +182,88 @@ export function ClipEditorModal({
   onOpenChange,
   onClipUpdated,
   onClipCreated,
+  onClipDeleted,
+  onRegeneratingChange,
+  taskApiUrl = "/api/tasks",
 }: ClipEditorModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const [startDelta, setStartDelta] = useState(0);
   const [endDelta, setEndDelta] = useState(0);
   const [captionTemplate, setCaptionTemplate] = useState("riverside");
-  const [fontSize, setFontSize] = useState(28);
+  const [fontSize, setFontSize] = useState(48);
   const [fontColor, setFontColor] = useState("#FFFFFF");
   const [highlightColor, setHighlightColor] = useState(DEFAULT_HIGHLIGHT_COLOR);
-  const [pillColor, setPillColor] = useState(DEFAULT_PILL_COLOR);
+  const [textBackgroundColor, setTextBackgroundColor] = useState(DEFAULT_TEXT_BACKGROUND_COLOR);
+  const [emphasisCallouts, setEmphasisCallouts] = useState(true);
   const [positionY, setPositionY] = useState(0.75);
   const [replaceOriginal, setReplaceOriginal] = useState(false);
   const [baseline, setBaseline] = useState<EditorBaseline | null>(null);
   const [previewToken, setPreviewToken] = useState(0);
   const [templates, setTemplates] = useState<CaptionStyleTemplate[]>([]);
   const [isApplying, setIsApplying] = useState(false);
+  const [applyStageIndex, setApplyStageIndex] = useState(0);
+  const [applyProgress, setApplyProgress] = useState(12);
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [showStylePreview, setShowStylePreview] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+
+  const effectiveRenderFontSize = useMemo(
+    () => resolveRenderFontSize(fontSize),
+    [fontSize],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.sessionStorage.getItem(STYLE_PREVIEW_STORAGE_KEY);
+    if (stored === "true") setShowStylePreview(true);
+  }, []);
+
+  const handleStylePreviewChange = (checked: boolean) => {
+    setShowStylePreview(checked);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(STYLE_PREVIEW_STORAGE_KEY, String(checked));
+    }
+  };
+
+  const applyTemplateSelection = useCallback((template: CaptionStyleTemplate) => {
+    const defaults = applyCaptionTemplateDefaults(template);
+    if (defaults.positionY != null) setPositionY(defaults.positionY);
+    if (defaults.fontSize != null) setFontSize(defaults.fontSize);
+    if (defaults.fontColor) setFontColor(defaults.fontColor);
+    if (defaults.highlightColor) setHighlightColor(defaults.highlightColor);
+    if (defaults.textBackgroundColor) setTextBackgroundColor(defaults.textBackgroundColor);
+    if (defaults.emphasisCallouts != null) setEmphasisCallouts(defaults.emphasisCallouts);
+  }, []);
+
+  const cleanupEventSource = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => cleanupEventSource, [cleanupEventSource]);
 
   useEffect(() => {
     if (!open || !clip) return;
     const templateId = sessionSettings?.captionTemplate ?? "riverside";
-    const templateDefault =
-      templates.find((template) => template.id === templateId)?.position_y ?? 0.75;
+    const matchedTemplate = templates.find((template) => template.id === templateId);
+    const templateDefaults = matchedTemplate
+      ? applyCaptionTemplateDefaults(matchedTemplate)
+      : {};
     const nextBaseline: EditorBaseline = {
       captionTemplate: templateId,
-      fontSize: sessionSettings?.fontSize ?? 28,
-      fontColor: sessionSettings?.fontColor ?? "#FFFFFF",
-      highlightColor: DEFAULT_HIGHLIGHT_COLOR,
-      pillColor: DEFAULT_PILL_COLOR,
-      positionY: templateDefault,
+      fontSize: templateDefaults.fontSize ?? sessionSettings?.fontSize ?? 48,
+      fontColor: templateDefaults.fontColor ?? sessionSettings?.fontColor ?? "#FFFFFF",
+      highlightColor: templateDefaults.highlightColor ?? DEFAULT_HIGHLIGHT_COLOR,
+      textBackgroundColor:
+        templateDefaults.textBackgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+      positionY: templateDefaults.positionY ?? 0.75,
+      emphasisCallouts: templateDefaults.emphasisCallouts ?? true,
     };
     setStartDelta(0);
     setEndDelta(0);
@@ -199,7 +274,8 @@ export function ClipEditorModal({
     setFontSize(nextBaseline.fontSize);
     setFontColor(nextBaseline.fontColor);
     setHighlightColor(nextBaseline.highlightColor);
-    setPillColor(nextBaseline.pillColor);
+    setTextBackgroundColor(nextBaseline.textBackgroundColor);
+    setEmphasisCallouts(nextBaseline.emphasisCallouts);
     setPositionY(nextBaseline.positionY);
     setBaseline(nextBaseline);
   }, [
@@ -232,16 +308,52 @@ export function ClipEditorModal({
     [templates, captionTemplate],
   );
 
+  const templateCapabilities = useMemo(
+    () => getCaptionTemplateCapabilities(activeTemplate),
+    [activeTemplate],
+  );
+
   const hasTrimChanges = startDelta !== 0 || endDelta !== 0;
   const hasStyleChanges = baseline
     ? captionTemplate !== baseline.captionTemplate ||
       fontSize !== baseline.fontSize ||
       fontColor !== baseline.fontColor ||
       highlightColor !== baseline.highlightColor ||
-      pillColor !== baseline.pillColor ||
+      textBackgroundColor !== baseline.textBackgroundColor ||
+      emphasisCallouts !== baseline.emphasisCallouts ||
       Math.abs(positionY - baseline.positionY) > 0.001
     : false;
   const hasChanges = hasTrimChanges || hasStyleChanges;
+
+  const applyStatus = useMemo(() => {
+    if (!isApplying) return "";
+    if (applyStageIndex === 0) {
+      return hasTrimChanges ? "Applying trim boundaries…" : "Preparing render…";
+    }
+    if (applyStageIndex === 1) return "Rendering video with subtitles…";
+    return "Updating clip…";
+  }, [isApplying, applyStageIndex, hasTrimChanges]);
+
+  useEffect(() => {
+    if (!isApplying) {
+      setApplyStageIndex(0);
+      setApplyProgress(12);
+      return;
+    }
+
+    const stageTimer = window.setInterval(() => {
+      setApplyStageIndex((previous) => Math.min(previous + 1, 2));
+    }, 8_000);
+
+    const progressTimer = window.setInterval(() => {
+      setApplyProgress((previous) => Math.min(previous + Math.random() * 10 + 4, 92));
+    }, 2_500);
+
+    return () => {
+      window.clearInterval(stageTimer);
+      window.clearInterval(progressTimer);
+    };
+  }, [isApplying]);
 
   const previewStart = clip
     ? formatTimestamp(parseTimestamp(clip.startTime) + startDelta)
@@ -265,11 +377,66 @@ export function ClipEditorModal({
     void video.play().catch(() => undefined);
   }, []);
 
+  const handleDownload = async () => {
+    if (!clip || !taskId || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const response = await fetch(
+        `/api/tasks/${taskId}/clips/${clip.id}/export?preset=tiktok`,
+      );
+      if (!response.ok) {
+        const parsed = await parseApiError(response, "Download failed");
+        throw new Error(formatSupportMessage(parsed));
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = clip.filename || `${clip.id}.mp4`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success("Clip downloaded");
+    } catch (downloadError) {
+      toast.error(
+        downloadError instanceof Error ? downloadError.message : "Download failed",
+      );
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!clip || !taskId || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/tasks/${taskId}/clips/${clip.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const parsed = await parseApiError(response, "Failed to delete clip");
+        throw new Error(formatSupportMessage(parsed));
+      }
+      toast.success("Clip deleted");
+      setDeleteDialogOpen(false);
+      onOpenChange(false);
+      onClipDeleted?.(clip.id);
+    } catch (deleteError) {
+      toast.error(deleteError instanceof Error ? deleteError.message : "Failed to delete clip");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleApply = async () => {
     if (!clip || !taskId) return;
 
     setIsApplying(true);
     setError(null);
+    onRegeneratingChange?.(clip.id);
+    toast.loading("Regenerating clip…", { id: RERENDER_TOAST_ID });
+    cleanupEventSource();
+
+    const sourceClipId = clip.id;
 
     try {
       const response = await fetch(`/api/tasks/${taskId}/clips/${clip.id}/re-render`, {
@@ -283,9 +450,10 @@ export function ClipEditorModal({
           font_size: fontSize,
           font_color: fontColor,
           highlight_color: highlightColor,
-          background_color: pillColor,
+          background_color: textBackgroundColor,
           position_y: positionY,
           replace: replaceOriginal,
+          emphasis_callouts: emphasisCallouts,
         }),
       });
 
@@ -294,41 +462,114 @@ export function ClipEditorModal({
         throw new Error(formatSupportMessage(parsed));
       }
 
-      const data = await response.json();
-      const raw = data.clip as Record<string, unknown>;
-      const cacheBust = Date.now();
-      const mapped = mapApiClip(raw, clip, cacheBust);
-
-      if (data.forked) {
-        onClipCreated(mapped);
-        toast.success("Clip regenerated — new version added to queue");
-      } else {
-        onClipUpdated(mapped);
-        setPreviewToken(cacheBust);
-        toast.success("Clip regenerated with your subtitle changes");
+      const queued = await response.json();
+      if (queued.status !== "queued") {
+        throw new Error("Unexpected response from re-render endpoint");
       }
 
-      setStartDelta(0);
-      setEndDelta(0);
-      setBaseline({
-        captionTemplate,
-        fontSize,
-        fontColor,
-        highlightColor,
-        pillColor,
-        positionY,
+      toast.loading("Rendering clip — this may take several minutes…", {
+        id: RERENDER_TOAST_ID,
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        const eventSource = new EventSource(
+          `${taskApiUrl}/${taskId}/progress?subscribe=clips`,
+        );
+        eventSourceRef.current = eventSource;
+
+        const finish = (handler: () => void) => {
+          cleanupEventSource();
+          handler();
+        };
+
+        eventSource.addEventListener("clip_ready", (event) => {
+          const payload = JSON.parse((event as MessageEvent<string>).data) as {
+            source_clip_id?: string;
+            clip?: Record<string, unknown>;
+            forked?: boolean;
+            replace?: boolean;
+          };
+          if (payload.source_clip_id && payload.source_clip_id !== sourceClipId) {
+            return;
+          }
+          if (!payload.clip) {
+            finish(() => reject(new Error("Re-render completed without clip data")));
+            return;
+          }
+
+          const cacheBust = Date.now();
+          const mapped = mapApiClip(payload.clip, clip, cacheBust);
+          const forked = Boolean(payload.forked ?? !replaceOriginal);
+
+          if (forked) {
+            onClipCreated(mapped);
+            toast.success("Clip regenerated — new version added to queue", {
+              id: RERENDER_TOAST_ID,
+            });
+          } else {
+            onClipUpdated(mapped);
+            setPreviewToken(cacheBust);
+            toast.success("Clip regenerated with your subtitle changes", {
+              id: RERENDER_TOAST_ID,
+            });
+          }
+
+          setStartDelta(0);
+          setEndDelta(0);
+          setBaseline({
+            captionTemplate,
+            fontSize,
+            fontColor,
+            highlightColor,
+            textBackgroundColor,
+            positionY,
+            emphasisCallouts,
+          });
+          finish(resolve);
+        });
+
+        eventSource.addEventListener("rerender_error", (event) => {
+          const payload = JSON.parse((event as MessageEvent<string>).data) as {
+            source_clip_id?: string;
+            message?: string;
+          };
+          if (payload.source_clip_id && payload.source_clip_id !== sourceClipId) {
+            return;
+          }
+          finish(() =>
+            reject(new Error(payload.message || "Failed to regenerate clip")),
+          );
+        });
+
+        eventSource.addEventListener("error", () => {
+          if (eventSource.readyState === EventSource.CLOSED) {
+            finish(() =>
+              reject(new Error("Lost connection while waiting for re-render")),
+            );
+          }
+        });
       });
     } catch (applyError) {
-      setError(applyError instanceof Error ? applyError.message : "Failed to regenerate clip");
+      cleanupEventSource();
+      const message =
+        applyError instanceof Error ? applyError.message : "Failed to regenerate clip";
+      setError(message);
+      toast.error(message, { id: RERENDER_TOAST_ID });
     } finally {
       setIsApplying(false);
+      onRegeneratingChange?.(null);
     }
+  };
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen && isApplying) return;
+    onOpenChange(nextOpen);
   };
 
   const dialogOpen = open && Boolean(clip && taskId);
 
   return (
-    <Dialog open={dialogOpen} onOpenChange={onOpenChange}>
+    <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="console-theme max-h-[90vh] overflow-y-auto border-[var(--console-border)] bg-[var(--console-beige)] text-[var(--console-text)] sm:max-w-3xl">
         {clip && taskId ? (
           <>
@@ -358,7 +599,7 @@ export function ClipEditorModal({
                     variant="outline"
                     className="border-[var(--console-terracotta)]/40 text-[var(--console-terracotta)]"
                   >
-                    Unsaved style changes
+                    Unsaved changes
                   </Badge>
                 )}
               </div>
@@ -385,15 +626,18 @@ export function ClipEditorModal({
                       Preview unavailable
                     </div>
                   )}
-                  <CaptionStylePreview
-                    fontFamily={sessionSettings?.fontFamily ?? "TikTokSans-Regular"}
-                    fontSize={fontSize}
-                    fontColor={fontColor}
-                    highlightColor={highlightColor}
-                    pillColor={pillColor}
-                    template={activeTemplate}
-                    positionY={positionY}
-                  />
+                  {showStylePreview && (
+                    <CaptionStylePreview
+                      fontFamily={sessionSettings?.fontFamily ?? "TikTokSans-Regular"}
+                      fontSize={fontSize}
+                      fontColor={fontColor}
+                      highlightColor={highlightColor}
+                      textBackgroundColor={textBackgroundColor}
+                      template={activeTemplate}
+                      positionY={positionY}
+                      emphasisCallouts={emphasisCallouts}
+                    />
+                  )}
                   {isApplying && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
                       <Loader2 className="h-8 w-8 animate-spin text-[var(--console-terracotta)]" />
@@ -456,47 +700,74 @@ export function ClipEditorModal({
                     </p>
                   </div>
                   <p className="text-xs leading-relaxed text-[var(--console-text-muted)]">
-                    Changes preview above. Click Regenerate to re-burn subtitles on the source
-                    video.
+                    {showStylePreview
+                      ? "Preview overlay shows unsaved style changes. Click Regenerate to re-burn subtitles on the source video."
+                      : "Turn on Preview overlay, then adjust style below. Subtitles on the video are already burned in."}
                   </p>
-                  <Select
-                    value={captionTemplate}
-                    onValueChange={(value) => {
-                      setCaptionTemplate(value);
-                      const template = templates.find((entry) => entry.id === value);
-                      if (template?.position_y != null) {
-                        setPositionY(template.position_y);
-                      }
-                    }}
-                    disabled={isApplying}
-                  >
-                    <SelectTrigger className="border-[var(--console-border)] bg-[var(--console-charcoal)]">
-                      <SelectValue placeholder="Caption template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(templates.length > 0
-                        ? templates
-                        : [{ id: captionTemplate, name: captionTemplate }]
-                      ).map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          {template.name ?? template.id}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="flex shrink-0 items-center gap-2 rounded-lg border border-[var(--console-border)] bg-[var(--console-charcoal)]/50 px-2.5 py-2">
+                      <Checkbox
+                        id="style-preview-overlay"
+                        checked={showStylePreview}
+                        onCheckedChange={(checked) =>
+                          handleStylePreviewChange(checked === true)
+                        }
+                        disabled={isApplying}
+                      />
+                      <Label
+                        htmlFor="style-preview-overlay"
+                        className="cursor-pointer text-sm text-[var(--console-text)]"
+                      >
+                        Preview overlay
+                      </Label>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <Select
+                        value={captionTemplate}
+                        onValueChange={(value) => {
+                          setCaptionTemplate(value);
+                          const template = templates.find((entry) => entry.id === value);
+                          if (template) applyTemplateSelection(template);
+                        }}
+                        disabled={isApplying}
+                      >
+                        <SelectTrigger className="w-full border-[var(--console-border)] bg-[var(--console-charcoal)]">
+                          <SelectValue placeholder="Caption template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(templates.length > 0
+                            ? templates
+                            : [{ id: captionTemplate, name: captionTemplate }]
+                          ).map((template) => (
+                            <SelectItem key={template.id} value={template.id}>
+                              {template.name ?? template.id}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  {activeTemplate?.description ? (
+                    <p className="text-xs italic text-[var(--console-text-muted)]">
+                      {activeTemplate.description}
+                    </p>
+                  ) : null}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-[var(--console-text-muted)]">
                       <span>Font size</span>
                       <span>{fontSize}px</span>
                     </div>
                     <Slider
-                      min={18}
-                      max={42}
+                      min={24}
+                      max={56}
                       step={1}
                       value={[fontSize]}
                       onValueChange={(value) => setFontSize(value[0] ?? fontSize)}
                       disabled={isApplying}
                     />
+                    <p className="text-[11px] text-[var(--console-text-muted)]">
+                      ~{effectiveRenderFontSize}px on export at 1080p
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs text-[var(--console-text-muted)]">
@@ -519,20 +790,55 @@ export function ClipEditorModal({
                     onChange={setFontColor}
                     disabled={isApplying}
                   />
-                  <ColorSwatches
-                    label="Highlight color"
-                    value={highlightColor}
-                    presets={HIGHLIGHT_COLOR_PRESETS}
-                    onChange={setHighlightColor}
-                    disabled={isApplying}
-                  />
-                  <ColorSwatches
-                    label="Pill background"
-                    value={pillColor}
-                    presets={PILL_COLOR_PRESETS}
-                    onChange={setPillColor}
-                    disabled={isApplying}
-                  />
+                  {templateCapabilities.supportsHighlight ? (
+                    <>
+                      <ColorSwatches
+                        label="Highlight color"
+                        value={highlightColor}
+                        presets={HIGHLIGHT_COLOR_PRESETS}
+                        onChange={setHighlightColor}
+                        disabled={isApplying}
+                      />
+                      <p className="text-xs text-[var(--console-text-muted)]">
+                        Accent on the word being spoken
+                      </p>
+                    </>
+                  ) : null}
+                  {templateCapabilities.supportsBackground ? (
+                    <>
+                      <ColorSwatches
+                        label="Text background"
+                        value={textBackgroundColor}
+                        presets={TEXT_BACKGROUND_PRESETS}
+                        onChange={setTextBackgroundColor}
+                        disabled={isApplying}
+                      />
+                      <p className="text-xs text-[var(--console-text-muted)]">
+                        Optional backdrop behind the caption line
+                      </p>
+                    </>
+                  ) : null}
+                  {templateCapabilities.supportsHighlight ? (
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--console-border)] bg-[var(--console-charcoal)]/40 px-3 py-2.5">
+                      <div className="space-y-0.5">
+                        <Label
+                          htmlFor="emphasis-callouts"
+                          className="text-sm text-[var(--console-text)]"
+                        >
+                          Emphasis callouts
+                        </Label>
+                        <p className="text-xs text-[var(--console-text-muted)]">
+                          AI highlights punchy words when they&apos;re spoken
+                        </p>
+                      </div>
+                      <Switch
+                        id="emphasis-callouts"
+                        checked={emphasisCallouts}
+                        onCheckedChange={setEmphasisCallouts}
+                        disabled={isApplying}
+                      />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--console-border)] bg-[var(--console-charcoal)]/40 px-3 py-2.5">
@@ -559,6 +865,22 @@ export function ClipEditorModal({
 
                 {error && <p className="text-sm text-red-400">{error}</p>}
 
+                {isApplying && (
+                  <div className="space-y-2 rounded-lg border border-[var(--console-border)] bg-[var(--console-charcoal)]/40 px-3 py-3">
+                    <div className="flex items-center gap-2 text-sm text-[var(--console-text)]">
+                      <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[var(--console-terracotta)]" />
+                      <span>{applyStatus}</span>
+                    </div>
+                    <Progress
+                      value={applyProgress}
+                      className="h-1.5 bg-[var(--console-border)] [&_[data-slot=progress-indicator]]:bg-[var(--console-terracotta)]"
+                    />
+                    <p className="text-xs text-[var(--console-text-muted)]">
+                      This usually takes several minutes. Keep this tab open.
+                    </p>
+                  </div>
+                )}
+
                 <Button
                   type="button"
                   className="w-full bg-[var(--console-terracotta)] hover:bg-[var(--console-terracotta-muted)]"
@@ -576,6 +898,33 @@ export function ClipEditorModal({
                     "Regenerate as new clip"
                   )}
                 </Button>
+
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 border-[var(--console-border)]"
+                    disabled={isApplying || isDownloading || !clip}
+                    onClick={() => void handleDownload()}
+                  >
+                    {isDownloading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    Download
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                    disabled={isApplying || isDeleting || !clip}
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </Button>
+                </div>
               </div>
             </div>
 
@@ -605,6 +954,31 @@ export function ClipEditorModal({
           </>
         ) : null}
       </DialogContent>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this clip?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the clip from your session and deletes its video file. This cannot be
+              undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              disabled={isDeleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDelete();
+              }}
+            >
+              {isDeleting ? "Deleting…" : "Delete clip"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

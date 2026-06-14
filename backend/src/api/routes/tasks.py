@@ -3,7 +3,7 @@ Task API routes using refactored architecture.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 import json
@@ -11,6 +11,8 @@ import logging
 from typing import Dict, Any
 import inspect
 import re
+import subprocess
+from pathlib import Path
 
 from ...database import get_db
 from ...database import AsyncSessionLocal
@@ -28,7 +30,29 @@ config = get_config()
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-def _normalize_font_size(value: Any, default: int = 24) -> int:
+def _resolve_clip_input_path(clip: Dict[str, Any]) -> Path:
+    """Resolve the on-disk MP4 for export, matching clip serving fallbacks."""
+    file_path = clip.get("file_path")
+    if file_path:
+        candidate = Path(file_path)
+        if candidate.is_file():
+            return candidate
+
+    filename = clip.get("filename")
+    if filename:
+        fallback = (Path(config.temp_dir) / "clips" / filename).resolve()
+        clips_dir = (Path(config.temp_dir) / "clips").resolve()
+        if str(fallback).startswith(str(clips_dir)) and fallback.is_file():
+            return fallback
+
+    if file_path:
+        return Path(file_path)
+    if filename:
+        return Path(config.temp_dir) / "clips" / filename
+    return Path(config.temp_dir) / "clips" / "missing.mp4"
+
+
+def _normalize_font_size(value: Any, default: int = 48) -> int:
     try:
         parsed = int(value)
     except (TypeError, ValueError):
@@ -101,7 +125,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     font_family = _normalize_font_family(
         font_options.get("font_family", "TikTokSans-Regular")
     )
-    font_size = _normalize_font_size(font_options.get("font_size", 24))
+    font_size = _normalize_font_size(font_options.get("font_size", 48))
     font_color = _normalize_font_color(font_options.get("font_color", "#FFFFFF"))
     highlight_color = _normalize_font_color(
         font_options.get("highlight_color", "#8B5CF6"), default="#8B5CF6"
@@ -547,11 +571,32 @@ async def regenerate_clip(
         )
 
 
-@router.post("/{task_id}/clips/{clip_id}/re-render")
+@router.get("/{task_id}/clips/{clip_id}/transcript-words")
+async def get_clip_transcript_words(
+    task_id: str, clip_id: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """Return word-level transcript for a clip (times relative to clip start)."""
+    try:
+        task_service = TaskService(db)
+        await _require_task_owner(request, task_service, db, task_id)
+        words = await task_service.get_clip_transcript_words(task_id, clip_id)
+        return {"words": words}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(
+            "Error loading transcript words for clip %s in task %s", clip_id, task_id
+        )
+        raise HTTPException(status_code=500, detail=f"Error loading transcript words: {e}")
+
+
+@router.post("/{task_id}/clips/{clip_id}/re-render", status_code=202)
 async def re_render_clip(
     task_id: str, clip_id: str, request: Request, db: AsyncSession = Depends(get_db)
 ):
-    """Re-render clip from source with boundary and style changes."""
+    """Enqueue clip re-render from source with boundary and style changes."""
     try:
         payload = await request.json()
         start_delta = float(payload.get("start_delta_seconds", 0))
@@ -559,12 +604,13 @@ async def re_render_clip(
         font_family = _normalize_font_family(
             payload.get("font_family", "TikTokSans-Regular")
         )
-        font_size = _normalize_font_size(payload.get("font_size", 24))
+        font_size = _normalize_font_size(payload.get("font_size", 48))
         font_color = _normalize_font_color(payload.get("font_color", "#FFFFFF"))
         caption_template = payload.get("caption_template", "riverside")
         highlight_color = payload.get("highlight_color", "#8B5CF6")
         background_color = payload.get("background_color", "#1A1A1ACC")
         replace = bool(payload.get("replace", False))
+        emphasis_callouts = bool(payload.get("emphasis_callouts", True))
         position_y_raw = payload.get("position_y")
         position_y = float(position_y_raw) if position_y_raw is not None else None
         if position_y is not None:
@@ -575,12 +621,16 @@ async def re_render_clip(
         task_record = await task_service.task_repo.get_task_by_id(db, task_id)
         if not task_record:
             raise HTTPException(status_code=404, detail="Task not found")
+        clip = await task_service.clip_repo.get_clip_by_id(db, clip_id)
+        if not clip or clip.get("task_id") != task_id:
+            raise HTTPException(status_code=404, detail="Clip not found")
         if not is_font_accessible(font_family, task_record["user_id"]):
             raise HTTPException(
                 status_code=400, detail="Selected font is not available"
             )
 
-        updated_clip = await task_service.re_render_clip(
+        job_id = await JobQueue.enqueue_job(
+            "re_render_clip_task",
             task_id,
             clip_id,
             start_delta,
@@ -593,25 +643,29 @@ async def re_render_clip(
             background_color=background_color,
             position_y=position_y,
             replace=replace,
+            emphasis_callouts=emphasis_callouts,
         )
-        forked = bool(updated_clip.get("forked", not replace))
-        return {
-            "clip": updated_clip,
-            "forked": forked,
-            "parent_clip_id": clip_id if forked else None,
-            "message": (
-                "Clip replaced with regenerated version"
-                if replace
-                else "Clip saved as new version"
-            ),
-        }
+
+        return JSONResponse(
+            status_code=202,
+            content={
+                "job_id": job_id,
+                "status": "queued",
+                "source_clip_id": clip_id,
+                "replace": replace,
+                "message": "Re-render started",
+            },
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error re-rendering clip: {e}")
-        raise HTTPException(status_code=500, detail="Error re-rendering clip")
+        logger.exception(
+            "Error enqueueing re-render for clip %s in task %s", clip_id, task_id
+        )
+        detail = str(e).strip() or "Error starting re-render"
+        raise HTTPException(status_code=500, detail=detail)
 
 
 @router.post("/{task_id}/settings")
@@ -624,7 +678,7 @@ async def apply_task_settings(
         font_family = _normalize_font_family(
             payload.get("font_family", "TikTokSans-Regular")
         )
-        font_size = _normalize_font_size(payload.get("font_size", 24))
+        font_size = _normalize_font_size(payload.get("font_size", 48))
         font_color = _normalize_font_color(payload.get("font_color", "#FFFFFF"))
         caption_template = payload.get("caption_template", "default")
         apply_to_existing = bool(payload.get("apply_to_existing", False))
@@ -681,13 +735,28 @@ async def export_clip(
         if not clip or clip.get("task_id") != task_id:
             raise HTTPException(status_code=404, detail="Clip not found")
 
-        from pathlib import Path
+        input_path = _resolve_clip_input_path(clip)
+        if not input_path.is_file():
+            raise HTTPException(status_code=404, detail="Clip file not found on disk")
 
-        output_path = export_with_preset(
-            Path(clip["file_path"]),
-            Path(config.temp_dir) / "exports",
-            preset_name,
-        )
+        try:
+            output_path = export_with_preset(
+                input_path,
+                Path(config.temp_dir) / "exports",
+                preset_name,
+            )
+        except subprocess.CalledProcessError as e:
+            stderr = (e.stderr or b"").decode("utf-8", errors="replace").strip()
+            logger.error(
+                "ffmpeg export failed for clip %s in task %s: %s",
+                clip_id,
+                task_id,
+                stderr or e,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Export encoding failed. Check backend logs for ffmpeg output.",
+            ) from e
 
         download_name = f"{Path(clip['filename']).stem}_{preset_name}.mp4"
         return FileResponse(
@@ -715,7 +784,7 @@ async def generate_clips_from_query(
         font_family = _normalize_font_family(
             payload.get("font_family", "TikTokSans-Regular")
         )
-        font_size = _normalize_font_size(payload.get("font_size", 24))
+        font_size = _normalize_font_size(payload.get("font_size", 48))
         font_color = _normalize_font_color(payload.get("font_color", "#FFFFFF"))
         caption_template = payload.get("caption_template", "default")
 

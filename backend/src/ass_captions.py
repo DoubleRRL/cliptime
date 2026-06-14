@@ -28,7 +28,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},{primary_colour},{secondary_colour},{outline_colour},&H00000000,-1,0,0,0,100,100,0,0,1,{outline},{shadow},2,80,80,{margin_v},1
+Style: Default,{font_name},{font_size},{primary_colour},{secondary_colour},{outline_colour},{back_colour},-1,0,0,0,100,100,0,0,{border_style},{outline},{shadow},2,80,80,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -64,14 +64,21 @@ def seconds_to_ass_time(seconds: float) -> str:
 
 
 def hex_to_ass_color(hex_color: str, alpha: str = "00") -> str:
-    """Convert #RRGGBB to ASS &HAABBGGRR format."""
+    """Convert #RRGGBB or #RRGGBBAA to ASS &HAABBGGRR format."""
     color = (hex_color or "#FFFFFF").lstrip("#")
-    if len(color) != 6:
-        return "&H00FFFFFF"
-    r = int(color[0:2], 16)
-    g = int(color[2:4], 16)
-    b = int(color[4:6], 16)
-    return f"&H{alpha}{b:02X}{g:02X}{r:02X}"
+    if len(color) == 8:
+        r = int(color[0:2], 16)
+        g = int(color[2:4], 16)
+        b = int(color[4:6], 16)
+        a = int(color[6:8], 16)
+        ass_alpha = 255 - a
+        return f"&H{ass_alpha:02X}{b:02X}{g:02X}{r:02X}"
+    if len(color) == 6:
+        r = int(color[0:2], 16)
+        g = int(color[2:4], 16)
+        b = int(color[4:6], 16)
+        return f"&H{alpha}{b:02X}{g:02X}{r:02X}"
+    return "&H00FFFFFF"
 
 
 def _resolve_font_name(font_family: str) -> str:
@@ -120,16 +127,26 @@ def generate_ass_from_words(
     effective_size = int(font_size or template.get("font_size", 40))
     scaled_size = max(24, min(64, int(effective_size * (play_res_x / 720))))
     margin_v = max(60, int(play_res_y * (1.0 - float(template.get("position_y", 0.75)) + 0.05)))
-    outline = max(
-        1,
-        min(int(template.get("stroke_width", 3)), round(scaled_size * 0.08)),
-    )
     shadow = 1 if template.get("shadow") else 0
     uppercase = bool(template.get("uppercase"))
-
     primary = hex_to_ass_color(font_color or template.get("font_color", "#FFFFFF"))
     secondary = hex_to_ass_color(template.get("highlight_color", "#FFFF00"))
     outline_colour = hex_to_ass_color(template.get("stroke_color", "#000000"))
+
+    has_background = bool(template.get("background"))
+    bg_hex = template.get("background_color") or "#000000AA"
+    if has_background:
+        border_style = 3
+        back_colour = hex_to_ass_color(bg_hex)
+        outline = max(0, min(int(template.get("stroke_width", 0)), round(scaled_size * 0.06)))
+    else:
+        border_style = 1
+        back_colour = "&H00000000"
+        outline = max(
+            1,
+            min(int(template.get("stroke_width", 3)), round(scaled_size * 0.08)),
+        )
+
     font_name = _resolve_font_name(font_family or template.get("font_family", "THEBOLDFONT"))
 
     lines = [
@@ -141,6 +158,8 @@ def generate_ass_from_words(
             primary_colour=primary,
             secondary_colour=secondary,
             outline_colour=outline_colour,
+            back_colour=back_colour,
+            border_style=border_style,
             outline=outline,
             shadow=shadow,
             margin_v=margin_v,

@@ -54,7 +54,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
         source: { url: videoUrl, title: null },
         font_options: {
           font_family: "TikTokSans-Regular",
-          font_size: 28,
+          font_size: 48,
           font_color: "#FFFFFF",
           highlight_color: "#8B5CF6",
           background_color: "#1A1A1ACC",

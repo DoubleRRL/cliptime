@@ -27,6 +27,9 @@ type ConsoleShellProps = {
   onClipReady?: (clip: Record<string, unknown>) => void;
   onClipUpdated: (clip: ConsoleClip) => void;
   onClipCreated: (clip: ConsoleClip) => void;
+  onClipDeleted?: (clipId: string) => void;
+  regeneratingClipId?: string | null;
+  onRegeneratingChange?: (clipId: string | null) => void;
 };
 
 export function ConsoleShell({
@@ -44,6 +47,9 @@ export function ConsoleShell({
   onClipReady,
   onClipUpdated,
   onClipCreated,
+  onClipDeleted,
+  regeneratingClipId = null,
+  onRegeneratingChange,
 }: ConsoleShellProps) {
   const [activeClipId, setActiveClipId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -131,6 +137,7 @@ export function ConsoleShell({
           onSessionCreated={onSessionCreated}
           onDeleteSession={onDeleteSession}
           onSelectClip={handleSelectClip}
+          regeneratingClipId={regeneratingClipId}
         />
 
         <CenterClips
@@ -141,6 +148,7 @@ export function ConsoleShell({
           clips={clips}
           activeClipId={activeClipId}
           progress={progress}
+          regeneratingClipId={regeneratingClipId}
           onSelectClip={handleSelectClip}
           onClipReady={onClipReady}
         />
@@ -157,6 +165,12 @@ export function ConsoleShell({
           onClipCreated(clip);
           setActiveClipId(clip.id);
         }}
+        onClipDeleted={(clipId) => {
+          onClipDeleted?.(clipId);
+          setActiveClipId(null);
+          setEditorOpen(false);
+        }}
+        onRegeneratingChange={onRegeneratingChange}
       />
     </div>
   );

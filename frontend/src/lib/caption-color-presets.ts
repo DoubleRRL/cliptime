@@ -7,13 +7,16 @@ export const HIGHLIGHT_COLOR_PRESETS = [
   { label: "White", value: "#FFFFFF" },
 ] as const;
 
-export const PILL_COLOR_PRESETS = [
+export const TEXT_BACKGROUND_PRESETS = [
+  { label: "None", value: "#00000000" },
   { label: "Dark", value: "#1A1A1ACC" },
   { label: "Charcoal", value: "#1C1917CC" },
   { label: "Terracotta", value: "#C15F3CE6" },
   { label: "Purple", value: "#6D28D9CC" },
-  { label: "Transparent", value: "#00000066" },
 ] as const;
+
+/** @deprecated Use TEXT_BACKGROUND_PRESETS */
+export const PILL_COLOR_PRESETS = TEXT_BACKGROUND_PRESETS;
 
 export const FONT_COLOR_PRESETS = [
   { label: "White", value: "#FFFFFF" },

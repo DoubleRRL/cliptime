@@ -63,6 +63,34 @@ def _parse_color(color: str, default: Tuple[int, int, int, int]) -> Tuple[int, i
     return default
 
 
+def _is_transparent_background(color: Optional[str]) -> bool:
+    if not color or str(color).lower() == "transparent":
+        return True
+    c = str(color).lstrip("#")
+    if len(c) == 8 and c[6:8].lower() == "00":
+        return True
+    return False
+
+
+def _normalize_word_token(text: str) -> str:
+    return str(text or "").lower().strip(".,!?;:\"'")
+
+
+def _should_show_active_highlight_pill(template: Dict, text: str) -> bool:
+    """Whether the active spoken word gets a highlight pill background."""
+    emphasis_on = template.get("emphasis_callouts", True)
+    if not emphasis_on:
+        return True
+    emphasis_set = {
+        _normalize_word_token(word)
+        for word in (template.get("emphasis_words") or [])
+        if str(word).strip()
+    }
+    if not emphasis_set:
+        return True
+    return _normalize_word_token(text) in emphasis_set
+
+
 def _hex_to_rgb(color: str) -> Tuple[int, int, int]:
     r, g, b, _ = _parse_color(color, (255, 255, 255, 255))
     return r, g, b
@@ -110,6 +138,12 @@ def _measure_line(
     return total_w, line_h, max_ascent, entries
 
 
+def _scaled_template_font_size(template: Dict, video_width: int) -> int:
+    from .video_utils import get_scaled_font_size
+
+    return get_scaled_font_size(int(template.get("font_size", 48)), video_width)
+
+
 def render_pill_phrase_image(
     words: List[str],
     active_idx: int,
@@ -119,7 +153,7 @@ def render_pill_phrase_image(
     max_width: int,
 ) -> Image.Image:
     """Riverside-style: dark rounded pill, active word highlight fill."""
-    base_size = int(template.get("font_size", 28))
+    base_size = _scaled_template_font_size(template, video_width)
     pill_rgba = _parse_color(
         template.get("background_color") or "#1A1A1ACC",
         (26, 26, 26, 204),
@@ -161,11 +195,12 @@ def render_pill_phrase_image(
     draw = ImageDraw.Draw(image)
 
     radius = max(8, int(base_size * 0.45))
-    draw.rounded_rectangle(
-        [(0, 0), (img_w - 1, img_h - 1)],
-        radius=radius,
-        fill=pill_rgba,
-    )
+    if not _is_transparent_background(template.get("background_color")):
+        draw.rounded_rectangle(
+            [(0, 0), (img_w - 1, img_h - 1)],
+            radius=radius,
+            fill=pill_rgba,
+        )
 
     font = _load_font(font_path, base_size)
     spacing = int(base_size * 0.22)
@@ -177,7 +212,7 @@ def render_pill_phrase_image(
         baseline_y = y + max_ascent
         x = (img_w - lw) // 2
         for text, w, fnt, is_active in entries:
-            if is_active:
+            if is_active and _should_show_active_highlight_pill(template, text):
                 bbox = draw.textbbox((x, baseline_y), text, font=fnt, anchor="ls")
                 hl_x1 = bbox[0] - hl_pad_x
                 hl_y1 = bbox[1] - hl_pad_y
@@ -209,7 +244,7 @@ def render_phrase_image(
             words, active_idx, template, font_path, video_width, max_width
         )
 
-    base_size = int(template.get("font_size", 40))
+    base_size = _scaled_template_font_size(template, video_width)
     font = _load_font(font_path, base_size)
     normal_rgb = _hex_to_rgb(template.get("font_color", "#FFFFFF"))
     highlight_rgb = _hex_to_rgb(template.get("highlight_color", "#FFFF00"))

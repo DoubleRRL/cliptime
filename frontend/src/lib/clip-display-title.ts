@@ -1,6 +1,6 @@
 import type { ConsoleClip } from "@/components/console/types";
 
-const CARD_TITLE_MAX_LEN = 48;
+const CARD_TITLE_MAX_LEN = 80;
 
 function firstSentence(text: string): string {
   const trimmed = text.trim();

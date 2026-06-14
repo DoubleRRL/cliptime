@@ -62,6 +62,7 @@ export function ConsoleApp() {
   const [clips, setClips] = useState<ConsoleClip[]>([]);
   const [sessionSettings, setSessionSettings] = useState<ConsoleSessionSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [regeneratingClipId, setRegeneratingClipId] = useState<string | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
 
@@ -98,7 +99,7 @@ export function ConsoleApp() {
     const rawClips = (task.clips || []) as Array<Record<string, unknown>>;
     setSessionSettings({
       fontFamily: String(task.font_family || "TikTokSans-Regular"),
-      fontSize: Number(task.font_size ?? 28),
+      fontSize: Number(task.font_size ?? 48),
       fontColor: String(task.font_color || "#FFFFFF"),
       captionTemplate: String(task.caption_template || "riverside"),
     });
@@ -167,14 +168,30 @@ export function ConsoleApp() {
     );
   }, []);
 
-  const handleClipCreated = useCallback((newClip: ConsoleClip) => {
-    setClips((previous) => {
-      if (previous.some((clip) => clip.id === newClip.id)) {
-        return previous.map((clip) => (clip.id === newClip.id ? { ...clip, ...newClip } : clip));
+  const handleClipCreated = useCallback(
+    (newClip: ConsoleClip) => {
+      setClips((previous) => {
+        if (previous.some((clip) => clip.id === newClip.id)) {
+          return previous.map((clip) => (clip.id === newClip.id ? { ...clip, ...newClip } : clip));
+        }
+        return [...previous, newClip];
+      });
+      if (activeSessionId) {
+        void loadClips(activeSessionId);
       }
-      return [...previous, newClip];
-    });
-  }, []);
+    },
+    [activeSessionId, loadClips],
+  );
+
+  const handleClipDeleted = useCallback(
+    (clipId: string) => {
+      setClips((previous) => previous.filter((clip) => clip.id !== clipId));
+      if (activeSessionId) {
+        void loadClips(activeSessionId);
+      }
+    },
+    [activeSessionId, loadClips],
+  );
 
   const handleSelectSession = useCallback((sessionId: string) => {
     setActiveSessionId(sessionId);
@@ -249,6 +266,9 @@ export function ConsoleApp() {
       onClipReady={handleClipReady}
       onClipUpdated={handleClipUpdated}
       onClipCreated={handleClipCreated}
+      onClipDeleted={handleClipDeleted}
+      regeneratingClipId={regeneratingClipId}
+      onRegeneratingChange={setRegeneratingClipId}
     />
   );
 }

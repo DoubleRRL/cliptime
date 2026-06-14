@@ -338,7 +338,7 @@ def round_to_even(value: int) -> int:
 def get_scaled_font_size(base_font_size: int, video_width: int) -> int:
     """Scale caption font size by output width with sensible bounds."""
     scaled_size = int(base_font_size * (video_width / 720))
-    return max(24, min(64, scaled_size))
+    return max(24, min(72, scaled_size))
 
 
 def get_subtitle_max_width(video_width: int) -> int:
@@ -771,6 +771,8 @@ def create_assemblyai_subtitles(
     background_color: Optional[str] = None,
     layout_timeline: Optional[List] = None,
     position_y: Optional[float] = None,
+    emphasis_callouts: bool = True,
+    emphasis_words: Optional[List[str]] = None,
 ) -> List[TextClip]:
     """Create subtitles using AssemblyAI's precise word timing with template support."""
     transcript_data = load_cached_transcript_data(video_path)
@@ -798,6 +800,9 @@ def create_assemblyai_subtitles(
         effective_template["highlight_color"] = highlight_color
     if background_color:
         effective_template["background_color"] = background_color
+    effective_template["emphasis_callouts"] = emphasis_callouts
+    if emphasis_words is not None:
+        effective_template["emphasis_words"] = emphasis_words
 
     logger.info(
         f"Creating subtitles with template '{caption_template}', animation: {animation_type}"
@@ -1468,6 +1473,17 @@ def create_karaoke_subtitles(
                     video_height, max_w_height, position_y
                 )
 
+                if template.get("background") and template.get("background_color"):
+                    bg_clip = create_subtitle_box_clip(
+                        int(total_width),
+                        max_w_height,
+                        word_start,
+                        word_duration,
+                        vertical_position,
+                        str(template["background_color"]),
+                    )
+                    subtitle_clips.append(bg_clip)
+
                 for w_idx, word in enumerate(visible_group):
                     is_current = w_idx == word_idx
                     
@@ -1696,6 +1712,35 @@ def create_pop_subtitles(
     return subtitle_clips
 
 
+def _parse_hex_rgb(color: str, default: Tuple[int, int, int] = (0, 0, 0)) -> Tuple[int, int, int]:
+    c = (color or "#000000").lstrip("#")
+    if len(c) >= 6:
+        return int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+    return default
+
+
+def create_subtitle_box_clip(
+    text_width: int,
+    text_height: int,
+    start: float,
+    duration: float,
+    vertical_position: int,
+    background_color: str,
+    padding: int = 10,
+) -> ColorClip:
+    """Rectangular caption background box (fade / karaoke templates)."""
+    bg_color_hex = (
+        background_color[:7] if len(background_color) > 7 else background_color
+    )
+    rgb = _parse_hex_rgb(bg_color_hex)
+    return (
+        ColorClip(size=(text_width + padding * 2, text_height + padding), color=rgb)
+        .with_duration(duration)
+        .with_start(start)
+        .with_position(("center", vertical_position - padding // 2))
+    )
+
+
 def create_fade_subtitles(
     relevant_words: List[Dict],
     video_width: int,
@@ -1756,29 +1801,16 @@ def create_fade_subtitles(
             # Add background if specified
             if has_background and background_color:
                 padding = 10
-                # Parse background color (handle alpha)
-                bg_color_hex = (
-                    background_color[:7]
-                    if len(background_color) > 7
-                    else background_color
+                bg_clip = create_subtitle_box_clip(
+                    text_width,
+                    text_height,
+                    group_start,
+                    group_duration,
+                    vertical_position,
+                    background_color,
+                    padding=padding,
                 )
 
-                bg_clip = (
-                    ColorClip(
-                        size=(text_width + padding * 2, text_height + padding),
-                        color=tuple(
-                            int(bg_color_hex[i : i + 2], 16) for i in (1, 3, 5)
-                        ),
-                    )
-                    .with_duration(group_duration)
-                    .with_start(group_start)
-                )
-
-                bg_clip = bg_clip.with_position(
-                    ("center", vertical_position - padding // 2)
-                )
-
-                # Apply fade to background
                 fade_duration = min(0.2, group_duration / 4)
                 bg_clip = (
                     bg_clip.with_effects(
@@ -1829,6 +1861,8 @@ def create_optimized_clip(
     background_color: Optional[str] = None,
     encode_quality: str = "high",
     position_y: Optional[float] = None,
+    emphasis_callouts: bool = True,
+    emphasis_words: Optional[List[str]] = None,
 ) -> bool:
     """Create clip with optional subtitles. output_format: 'vertical' (9:16) or 'original' (keep source size)."""
     try:
@@ -1989,6 +2023,8 @@ def create_optimized_clip(
                 background_color=background_color,
                 layout_timeline=relative_layout_timeline,
                 position_y=position_y,
+                emphasis_callouts=emphasis_callouts,
+                emphasis_words=emphasis_words,
             )
             final_clips.extend(subtitle_clips)
 
@@ -2032,6 +2068,8 @@ def create_optimized_clip(
                 "font_color": font_color or template["font_color"],
                 "font_family": font_family or template["font_family"],
             }
+            if background_color:
+                effective_template["background_color"] = background_color
             ass_content = generate_ass_from_words(
                 relevant_words,
                 effective_template,

@@ -1940,3 +1940,124 @@ async def score_segment_virality(text: str) -> SegmentRescoreResult:
         post_title=_normalize_post_title("", excerpt),
     )
 
+
+def _normalize_emphasis_token(token: str) -> str:
+    return str(token or "").lower().strip(".,!?;:\"'")
+
+
+def _heuristic_emphasis_words(word_tokens: list[str]) -> list[str]:
+    """Pick punchy words without LLM — ALL CAPS, exclamations, longer content words."""
+    if not word_tokens:
+        return []
+
+    emphasis: list[str] = []
+    seen: set[str] = set()
+    for raw in word_tokens:
+        token = str(raw or "").strip()
+        if not token:
+            continue
+        normalized = _normalize_emphasis_token(token)
+        if not normalized or normalized in seen:
+            continue
+        if token.isupper() and len(token) > 1:
+            emphasis.append(token)
+            seen.add(normalized)
+            continue
+        if token.endswith("!") or token.endswith("?"):
+            emphasis.append(token.rstrip("!?"))
+            seen.add(_normalize_emphasis_token(token))
+            continue
+        if len(normalized) >= 6 and normalized not in {
+            "because",
+            "something",
+            "everything",
+            "anything",
+            "really",
+            "actually",
+            "literally",
+        }:
+            emphasis.append(token)
+            seen.add(normalized)
+        if len(emphasis) >= 3:
+            break
+
+    if not emphasis and word_tokens:
+        mid = word_tokens[len(word_tokens) // 2]
+        if str(mid).strip():
+            emphasis.append(str(mid).strip())
+    return emphasis[:3]
+
+
+async def detect_emphasis_words(
+    transcript_text: str,
+    word_tokens: list[str] | None = None,
+) -> list[str]:
+    """Return 1-3 transcript words that deserve a spoken-word emphasis pill."""
+    tokens = [
+        str(word).strip()
+        for word in (word_tokens or [])
+        if str(word).strip()
+    ]
+    if not tokens:
+        tokens = [part for part in str(transcript_text or "").split() if part.strip()]
+
+    excerpt = " ".join(tokens).strip() or str(transcript_text or "").strip()
+    if not excerpt:
+        return []
+
+    try:
+        if effective_llm().startswith("ollama:"):
+            system = (
+                "Pick 1-3 exact words from this clip transcript that deserve a "
+                "spoken-word emphasis highlight (hooks, punchlines, reactions, CTAs). "
+                "Return JSON with key emphasis_words as an array of strings copied "
+                "exactly from the transcript. No words that are not in the transcript."
+            )
+            raw = await _ollama_json_request(system, excerpt[:2000], num_predict=512)
+            if raw and isinstance(raw.get("emphasis_words"), list):
+                allowed = {_normalize_emphasis_token(word) for word in tokens}
+                picked = []
+                for item in raw["emphasis_words"]:
+                    token = str(item or "").strip()
+                    if not token:
+                        continue
+                    if _normalize_emphasis_token(token) in allowed:
+                        picked.append(token)
+                    if len(picked) >= 3:
+                        break
+                if picked:
+                    return picked
+        else:
+            from pydantic import BaseModel, Field
+            from pydantic_ai import Agent
+
+            class EmphasisWordsResult(BaseModel):
+                emphasis_words: list[str] = Field(
+                    default_factory=list,
+                    description="1-3 exact transcript tokens to emphasize when spoken",
+                )
+
+            agent = Agent(
+                effective_llm(),
+                output_type=EmphasisWordsResult,
+                system_prompt=(
+                    "Pick 1-3 exact words from the clip transcript that deserve a "
+                    "spoken-word emphasis highlight (hooks, punchlines, reactions, CTAs). "
+                    "Return only words that appear verbatim in the transcript."
+                ),
+            )
+            result = await agent.run(excerpt[:2000])
+            allowed = {_normalize_emphasis_token(word) for word in tokens}
+            picked = [
+                str(word).strip()
+                for word in result.output.emphasis_words
+                if str(word).strip()
+                and _normalize_emphasis_token(str(word)) in allowed
+            ]
+            if picked:
+                return picked[:3]
+    except Exception as exc:
+        logger.warning("Emphasis word detection failed, using heuristic: %s", exc)
+
+    return _heuristic_emphasis_words(tokens)
+

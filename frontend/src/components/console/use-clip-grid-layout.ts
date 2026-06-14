@@ -16,9 +16,17 @@ export function getMaxCardWidth(zoom: number): number {
   return CLIP_MAX + t * (CLIP_MAX_AT_FULL_ZOOM - CLIP_MAX);
 }
 
-export function getMaxColumns(containerWidth: number): number {
+export function getMaxColumnsForZoom(
+  containerWidth: number,
+  zoom: number = DEFAULT_CLIP_ZOOM,
+): number {
   if (containerWidth <= 0) return 1;
-  return Math.max(1, Math.floor((containerWidth + CLIP_GAP) / (CLIP_MIN + CLIP_GAP)));
+  const cardWidth = getMaxCardWidth(zoom);
+  return Math.max(1, Math.floor((containerWidth + CLIP_GAP) / (cardWidth + CLIP_GAP)));
+}
+
+export function getMaxColumns(containerWidth: number): number {
+  return getMaxColumnsForZoom(containerWidth, DEFAULT_CLIP_ZOOM);
 }
 
 export function getCardWidth(
@@ -54,7 +62,7 @@ export function buildClipGridRows(
   containerWidth: number,
   zoom: number = DEFAULT_CLIP_ZOOM,
 ): ClipGridRow[] {
-  const maxColumns = getMaxColumns(containerWidth);
+  const maxColumns = getMaxColumnsForZoom(containerWidth, zoom);
   const rowCounts = chunkClipRows(clipCount, maxColumns);
   let startIndex = 0;
 

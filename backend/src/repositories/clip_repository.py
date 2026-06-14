@@ -32,6 +32,7 @@ class ClipRepository:
         value_score: int = 0,
         shareability_score: int = 0,
         hook_type: Optional[str] = None,
+        emphasis_words_json: Optional[str] = None,
     ) -> str:
         """Create a new clip record and return its ID."""
         result = await db.execute(
@@ -40,12 +41,12 @@ class ClipRepository:
                     (task_id, filename, file_path, start_time, end_time, duration,
                      text, relevance_score, reasoning, clip_order,
                      virality_score, hook_score, engagement_score, value_score, shareability_score, hook_type,
-                     created_at)
+                     emphasis_words_json, created_at)
                     VALUES
                     (:task_id, :filename, :file_path, :start_time, :end_time, :duration,
                      :text, :relevance_score, :reasoning, :clip_order,
                      :virality_score, :hook_score, :engagement_score, :value_score, :shareability_score, :hook_type,
-                     NOW())
+                     :emphasis_words_json, NOW())
                     RETURNING id
                 """),
                 {
@@ -65,6 +66,7 @@ class ClipRepository:
                     "value_score": value_score,
                     "shareability_score": shareability_score,
                     "hook_type": hook_type,
+                    "emphasis_words_json": emphasis_words_json,
                 },
             )
         clip_id = result.scalar()
@@ -80,7 +82,8 @@ class ClipRepository:
                 sa_text("""
                     SELECT id, filename, file_path, start_time, end_time, duration,
                            text, relevance_score, reasoning, clip_order, created_at,
-                           virality_score, hook_score, engagement_score, value_score, shareability_score, hook_type
+                           virality_score, hook_score, engagement_score, value_score, shareability_score, hook_type,
+                           emphasis_words_json
                     FROM generated_clips
                     WHERE task_id = :task_id
                     ORDER BY clip_order ASC
@@ -110,6 +113,7 @@ class ClipRepository:
                     "value_score": row.value_score or 0,
                     "shareability_score": row.shareability_score or 0,
                     "hook_type": row.hook_type,
+                    "emphasis_words_json": getattr(row, "emphasis_words_json", None),
                 }
             )
 
@@ -179,7 +183,7 @@ class ClipRepository:
                     SELECT id, task_id, filename, file_path, start_time, end_time, duration,
                            text, relevance_score, reasoning, clip_order,
                            virality_score, hook_score, engagement_score, value_score, shareability_score, hook_type,
-                           created_at
+                           emphasis_words_json, created_at
                     FROM generated_clips
                     WHERE id = :clip_id
                     """
@@ -208,6 +212,7 @@ class ClipRepository:
             "value_score": row.value_score or 0,
             "shareability_score": row.shareability_score or 0,
             "hook_type": row.hook_type,
+            "emphasis_words_json": getattr(row, "emphasis_words_json", None),
             "created_at": row.created_at.isoformat(),
             "video_url": f"/clips/{row.filename}",
         }
@@ -267,6 +272,7 @@ class ClipRepository:
         value_score: int = 0,
         shareability_score: int = 0,
         hook_type: Optional[str] = None,
+        emphasis_words_json: Optional[str] = None,
     ) -> None:
         """Update clip file and scoring metadata after a re-render."""
         await db.execute(
@@ -286,6 +292,7 @@ class ClipRepository:
                     value_score = :value_score,
                     shareability_score = :shareability_score,
                     hook_type = :hook_type,
+                    emphasis_words_json = :emphasis_words_json,
                     updated_at = NOW()
                 WHERE id = :clip_id
                 """
@@ -305,6 +312,7 @@ class ClipRepository:
                 "value_score": value_score,
                 "shareability_score": shareability_score,
                 "hook_type": hook_type,
+                "emphasis_words_json": emphasis_words_json,
             },
         )
         await db.commit()

@@ -12,7 +12,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "name": "Default",
         "description": "Clean white text with black outline",
         "font_family": "THEBOLDFONT",
-        "font_size": 28,
+        "font_size": 40,
         "font_color": "#FFFFFF",
         "highlight_color": "#FFD700",
         "stroke_color": "#000000",
@@ -29,7 +29,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "premium": True,
         "pill_style": True,
         "font_family": "TikTokSans-Regular",
-        "font_size": 28,
+        "font_size": 48,
         "font_color": "#FFFFFF",
         "highlight_color": "#8B5CF6",
         "background_color": "#1A1A1ACC",
@@ -42,6 +42,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "active_word_bounce": True,
         "active_word_scale": 1.15,
         "bounce_duration": 0.06,
+        "emphasis_callouts": True,
         "position_y": 0.82,
     },
     "hormozi": {
@@ -174,6 +175,8 @@ def get_template_info() -> list:
             "shadow": template.get("shadow", False),
             "premium": template.get("premium", False),
             "pill_style": template.get("pill_style", False),
+            "emphasis_callouts": template.get("emphasis_callouts", False),
+            "background": template.get("background", False),
         }
         for name, template in CAPTION_TEMPLATES.items()
     ]

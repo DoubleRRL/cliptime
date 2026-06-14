@@ -26,6 +26,7 @@ type CenterClipsProps = {
   clips: ConsoleClip[];
   activeClipId: string | null;
   progress: TaskProgressState;
+  regeneratingClipId?: string | null;
   onSelectClip: (id: string) => void;
   onClipReady?: (clip: Record<string, unknown>) => void;
 };
@@ -55,6 +56,7 @@ export function CenterClips({
   clips,
   activeClipId,
   progress,
+  regeneratingClipId = null,
   onSelectClip,
   onClipReady,
 }: CenterClipsProps) {
@@ -97,7 +99,7 @@ export function CenterClips({
 
   const captionTemplate = sessionSettings?.captionTemplate ?? "riverside";
   const fontFamily = sessionSettings?.fontFamily ?? "TikTokSans-Regular";
-  const fontSize = sessionSettings?.fontSize ?? 28;
+  const fontSize = sessionSettings?.fontSize ?? 48;
   const fontColor = sessionSettings?.fontColor ?? "#FFFFFF";
   const modelLabel = formatLlmModel(session?.llmModel);
 
@@ -157,7 +159,7 @@ export function CenterClips({
         </AnimatePresence>
       </div>
 
-      <div ref={gridRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div ref={gridRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4">
         <AnimatePresence mode="wait">
           {clips.length === 0 ? (
             <motion.div
@@ -197,6 +199,7 @@ export function CenterClips({
                       videoSrc={clip.videoUrl || null}
                       width={row.cardWidth}
                       isActive={clip.id === activeClipId}
+                      isRegenerating={clip.id === regeneratingClipId}
                       onClick={() => onSelectClip(clip.id)}
                     />
                   ))}

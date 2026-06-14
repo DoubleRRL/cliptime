@@ -1,12 +1,25 @@
 /** Mirror backend get_scaled_font_size + karaoke shrink-to-fit. */
 
+export const RENDER_WIDTH = 1080;
+export const RENDER_HEIGHT = 1920;
+
 const MIN_FONT_SIZE = 24;
-const MAX_FONT_SIZE = 64;
+const MAX_FONT_SIZE = 72;
 const REFERENCE_WIDTH = 720;
 
 export function getScaledFontSize(baseFontSize: number, videoWidth: number): number {
   const scaled = Math.round(baseFontSize * (videoWidth / REFERENCE_WIDTH));
   return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, scaled));
+}
+
+export function resolveRenderFontSize(
+  baseFontSize: number,
+  options: { useWidthScaling: boolean } = { useWidthScaling: true },
+): number {
+  if (options.useWidthScaling) {
+    return getScaledFontSize(baseFontSize, RENDER_WIDTH);
+  }
+  return baseFontSize;
 }
 
 export function getSubtitleMaxWidth(videoWidth: number): number {
@@ -36,13 +49,14 @@ export function fitPhraseFontSize(
   return size;
 }
 
-/** Linear preview size mapped from clip output height. Preview uses flex-wrap, so no single-line shrink. */
+/** Map effective render font size to CSS pixels in a 9:16 preview frame. */
 export function previewDisplayFontSize(
   baseFontSize: number,
   previewHeight: number,
-  outputHeight: number,
-  _previewWidth: number,
-  _words: string[],
+  outputHeight: number = RENDER_HEIGHT,
+  _previewWidth?: number,
+  _words?: string[],
 ): number {
-  return Math.max(8, baseFontSize * (previewHeight / outputHeight));
+  const renderSize = resolveRenderFontSize(baseFontSize);
+  return Math.max(8, renderSize * (previewHeight / outputHeight));
 }

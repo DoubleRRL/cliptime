@@ -403,6 +403,9 @@ class TaskService:
                         value_score=clip_info.get("value_score", 0),
                         shareability_score=clip_info.get("shareability_score", 0),
                         hook_type=clip_info.get("hook_type"),
+                        emphasis_words_json=json.dumps(clip_info.get("emphasis_words") or [])
+                        if clip_info.get("emphasis_words")
+                        else None,
                     )
                     await self.db.commit()
                     clip_id_by_index[index] = clip_id
@@ -808,9 +811,15 @@ class TaskService:
         background_color: str = "#1A1A1ACC",
         position_y: Optional[float] = None,
         replace: bool = False,
+        emphasis_callouts: bool = True,
+        progress_callback: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """Re-render a clip from source with adjusted boundaries and style."""
-        from ..ai import score_segment_virality
+        from ..ai import detect_emphasis_words, score_segment_virality
+
+        async def emit_progress(message: str, stage: str = "rerender"):
+            if progress_callback:
+                await progress_callback(message, stage)
 
         clip = await self.clip_repo.get_clip_by_id(self.db, clip_id)
         if not clip or clip["task_id"] != task_id:
@@ -819,6 +828,8 @@ class TaskService:
         task = await self.task_repo.get_task_by_id(self.db, task_id)
         if not task:
             raise ValueError("Task not found")
+
+        await emit_progress("Preparing clip boundaries…", "prepare")
 
         _, video_path = await self._resolve_task_transcript_and_video(task)
         video_duration = VideoService._get_file_duration(video_path)
@@ -837,20 +848,42 @@ class TaskService:
         new_end = self._seconds_to_mmss(end_seconds)
 
         transcript_text = clip.get("text") or ""
+        word_tokens: list[str] = []
         cached = load_cached_transcript_data(video_path)
         if cached:
             words = get_words_in_range(cached, start_seconds, end_seconds)
             if words:
-                transcript_text = " ".join(
-                    str(word.get("text") or "").strip() for word in words
-                ).strip()
+                word_tokens = [
+                    str(word.get("text") or "").strip()
+                    for word in words
+                    if str(word.get("text") or "").strip()
+                ]
+                transcript_text = " ".join(word_tokens).strip()
 
+        await emit_progress("Scoring segment…", "score")
         rescore = await score_segment_virality(transcript_text)
         virality = rescore.virality
         reasoning = (
             f"Edited from clip {clip_id}. "
             f"{virality.virality_reasoning or 'Re-scored after edit.'}"
         )
+
+        emphasis_words: list[str] = []
+        cached_emphasis = clip.get("emphasis_words_json")
+        if (
+            emphasis_callouts
+            and cached_emphasis
+            and transcript_text == (clip.get("text") or "")
+        ):
+            try:
+                parsed = json.loads(cached_emphasis)
+                if isinstance(parsed, list):
+                    emphasis_words = [str(word) for word in parsed if str(word).strip()]
+            except (TypeError, json.JSONDecodeError):
+                emphasis_words = []
+
+        if emphasis_callouts and not emphasis_words:
+            emphasis_words = await detect_emphasis_words(transcript_text, word_tokens)
 
         segment_dict = {
             "start_time": new_start,
@@ -877,6 +910,7 @@ class TaskService:
             )
         clip_index = max(int(clip_order) - 1, 0)
 
+        await emit_progress("Rendering clip with subtitles…", "render")
         clip_info = await self.video_service.create_single_clip(
             video_path,
             segment_dict,
@@ -891,12 +925,19 @@ class TaskService:
             highlight_color=highlight_color,
             background_color=background_color,
             position_y=position_y,
+            emphasis_callouts=emphasis_callouts,
+            emphasis_words=emphasis_words,
         )
         if clip_info is None:
             raise ValueError("Failed to re-render clip")
 
+        emphasis_json = json.dumps(emphasis_words) if emphasis_words else None
+
         if replace:
-            delete_clip_files([clip])
+            old_path = clip.get("file_path")
+            new_path = clip_info["path"]
+            if old_path and old_path != new_path:
+                delete_clip_files([clip])
             await self.clip_repo.update_clip_render(
                 self.db,
                 clip_id,
@@ -913,9 +954,11 @@ class TaskService:
                 value_score=virality.value_score,
                 shareability_score=virality.shareability_score,
                 hook_type=virality.hook_type,
+                emphasis_words_json=emphasis_json,
             )
             updated_clip = (await self.clip_repo.get_clip_by_id(self.db, clip_id)) or {}
             updated_clip["forked"] = False
+            await emit_progress("Clip updated.", "complete")
             return updated_clip
 
         new_clip_id = await self.clip_repo.create_clip(
@@ -936,6 +979,7 @@ class TaskService:
             value_score=virality.value_score,
             shareability_score=virality.shareability_score,
             hook_type=virality.hook_type,
+            emphasis_words_json=emphasis_json,
         )
         await self.db.commit()
 
@@ -949,6 +993,7 @@ class TaskService:
         new_clip = (await self.clip_repo.get_clip_by_id(self.db, new_clip_id)) or {}
         new_clip["parent_clip_id"] = clip_id
         new_clip["forked"] = True
+        await emit_progress("Clip saved.", "complete")
         return new_clip
 
     async def split_clip(
@@ -1085,6 +1130,36 @@ class TaskService:
             caption_text,
         )
         return (await self.clip_repo.get_clip_by_id(self.db, clip_id)) or {}
+
+    async def get_clip_transcript_words(
+        self, task_id: str, clip_id: str
+    ) -> list[dict[str, Any]]:
+        """Return word-level transcript timings relative to clip start."""
+        clip = await self.clip_repo.get_clip_by_id(self.db, clip_id)
+        if not clip or clip["task_id"] != task_id:
+            raise ValueError("Clip not found")
+
+        task = await self.task_repo.get_task_by_id(self.db, task_id)
+        if not task:
+            raise ValueError("Task not found")
+
+        _, video_path = await self._resolve_task_transcript_and_video(task)
+        cached = load_cached_transcript_data(video_path)
+        if not cached:
+            return []
+
+        start_seconds = parse_timestamp_to_seconds(clip["start_time"])
+        end_seconds = parse_timestamp_to_seconds(clip["end_time"])
+        words = get_words_in_range(cached, start_seconds, end_seconds)
+        return [
+            {
+                "text": str(word.get("text") or ""),
+                "start": float(word.get("start", 0)),
+                "end": float(word.get("end", 0)),
+            }
+            for word in words
+            if str(word.get("text") or "").strip()
+        ]
 
     async def get_performance_metrics(self) -> Dict[str, Any]:
         """Return aggregate processing performance metrics."""

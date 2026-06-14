@@ -303,9 +303,19 @@ class VideoService:
         background_color: str = "#1A1A1ACC",
         processing_mode: str = "quality",
         position_y: Optional[float] = None,
+        emphasis_callouts: bool = True,
+        emphasis_words: Optional[list[str]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Render a single clip in the thread pool and return clip_info dict, or None on failure."""
         try:
+            from ..ai import detect_emphasis_words
+            from ..caption_templates import get_template
+            from ..video_utils import (
+                load_cached_transcript_data,
+                get_words_in_range,
+                parse_timestamp_to_seconds,
+            )
+
             segment = VideoService.clamp_segment_timestamps(segment)
             start_seconds = parse_timestamp_to_seconds(segment["start_time"])
             end_seconds = parse_timestamp_to_seconds(segment["end_time"])
@@ -316,6 +326,30 @@ class VideoService:
                     f"Skipping clip {clip_index + 1}: invalid duration {duration:.1f}s"
                 )
                 return None
+
+            template = get_template(caption_template)
+            if emphasis_callouts is None:
+                emphasis_callouts = bool(template.get("emphasis_callouts", True))
+
+            resolved_emphasis = list(emphasis_words or [])
+            if emphasis_callouts and not resolved_emphasis:
+                transcript_text = str(segment.get("text") or "").strip()
+                word_tokens: list[str] = []
+                cached = load_cached_transcript_data(video_path)
+                if cached:
+                    words = get_words_in_range(cached, start_seconds, end_seconds)
+                    word_tokens = [
+                        str(word.get("text") or "").strip()
+                        for word in words
+                        if str(word.get("text") or "").strip()
+                    ]
+                    if word_tokens:
+                        transcript_text = " ".join(word_tokens)
+                if not word_tokens and transcript_text:
+                    word_tokens = transcript_text.split()
+                resolved_emphasis = await detect_emphasis_words(
+                    transcript_text, word_tokens
+                )
 
             clip_filename = (
                 f"clip_{clip_index + 1}_"
@@ -340,6 +374,8 @@ class VideoService:
                 background_color=background_color,
                 encode_quality=encoding_quality_for_mode(processing_mode),
                 position_y=position_y,
+                emphasis_callouts=emphasis_callouts,
+                emphasis_words=resolved_emphasis,
             )
 
             if not success:
@@ -363,6 +399,7 @@ class VideoService:
                 "value_score": segment.get("value_score", 0),
                 "shareability_score": segment.get("shareability_score", 0),
                 "hook_type": segment.get("hook_type"),
+                "emphasis_words": resolved_emphasis,
             }
         except Exception as e:
             logger.error(f"Error creating clip {clip_index + 1}: {e}")

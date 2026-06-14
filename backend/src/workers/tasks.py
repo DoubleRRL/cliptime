@@ -196,6 +196,86 @@ async def generate_clips_from_query_task(
             )
             raise
 
+
+async def re_render_clip_task(
+    ctx: Dict[str, Any],
+    task_id: str,
+    clip_id: str,
+    start_delta_seconds: float,
+    end_delta_seconds: float,
+    font_family: str = "TikTokSans-Regular",
+    font_size: int = 24,
+    font_color: str = "#FFFFFF",
+    caption_template: str = "riverside",
+    highlight_color: str = "#8B5CF6",
+    background_color: str = "#1A1A1ACC",
+    position_y: float | None = None,
+    replace: bool = False,
+    emphasis_callouts: bool = True,
+) -> Dict[str, Any]:
+    """Background worker task to re-render a clip with updated styling."""
+    from ..ai import set_model_override
+    from ..database import AsyncSessionLocal
+    from ..services.task_service import TaskService
+    from ..workers.progress import ProgressTracker
+
+    set_trace_id(f"task-{task_id}-rerender-{clip_id}")
+    logger.info("Worker re-rendering clip %s for task %s", clip_id, task_id)
+
+    progress = ProgressTracker(ctx["redis"], task_id)
+
+    async with AsyncSessionLocal() as db:
+        task_service = TaskService(db)
+        task_record = await task_service.task_repo.get_task_by_id(db, task_id)
+        set_model_override((task_record or {}).get("llm_model"))
+
+        async def progress_callback(message: str, stage: str = "rerender"):
+            await progress.update(0, message, "processing", stage=stage)
+
+        try:
+            updated_clip = await task_service.re_render_clip(
+                task_id,
+                clip_id,
+                start_delta_seconds,
+                end_delta_seconds,
+                font_family,
+                font_size,
+                font_color,
+                caption_template,
+                highlight_color=highlight_color,
+                background_color=background_color,
+                position_y=position_y,
+                replace=replace,
+                emphasis_callouts=emphasis_callouts,
+                progress_callback=progress_callback,
+            )
+            forked = bool(updated_clip.get("forked", not replace))
+            await progress.clip_ready(
+                0,
+                1,
+                updated_clip,
+                source_clip_id=clip_id,
+                replace=replace,
+                forked=forked,
+            )
+            logger.info("Re-render completed for clip %s in task %s", clip_id, task_id)
+            return {
+                "clip": updated_clip,
+                "forked": forked,
+                "parent_clip_id": clip_id if forked else None,
+            }
+        except Exception as e:
+            logger.error(
+                "Re-render failed for clip %s in task %s: %s",
+                clip_id,
+                task_id,
+                e,
+                exc_info=True,
+            )
+            await progress.rerender_error(clip_id, str(e))
+            raise
+
+
 # Worker configuration for arq
 class WorkerSettings:
     """Configuration for arq worker."""
@@ -206,7 +286,11 @@ class WorkerSettings:
     config = Config()
 
     # Functions to run
-    functions = [process_video_task, generate_clips_from_query_task]
+    functions = [
+        process_video_task,
+        generate_clips_from_query_task,
+        re_render_clip_task,
+    ]
     queue_name = "supoclip_tasks"
 
     # Redis settings from environment

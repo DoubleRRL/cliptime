@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 
-import { previewDisplayFontSize } from "@/lib/caption-fit";
+import { previewDisplayFontSize, RENDER_HEIGHT } from "@/lib/caption-fit";
 import { buildPreviewCaptionStyles, hexToRgba } from "@/lib/caption-preview-styles";
 import { cropToBackgroundStyle, panelToVerticalCrop, type SpeakerPanel } from "@/lib/preview-crop";
 
@@ -41,7 +41,6 @@ interface UploadCaptionPreviewProps {
 
 const PREVIEW_WIDTH = 270;
 const PREVIEW_HEIGHT = 480;
-const OUTPUT_HEIGHT = 720;
 
 const SAMPLE_WORDS = ["HOW", "YOUR", "CAPTIONS", "LOOK"];
 const WORD_CYCLE_MS = 650;
@@ -110,7 +109,7 @@ export default function UploadCaptionPreview({
   const displayFontSize = previewDisplayFontSize(
     fontSize,
     PREVIEW_HEIGHT,
-    OUTPUT_HEIGHT,
+    RENDER_HEIGHT,
     PREVIEW_WIDTH,
     words,
   );

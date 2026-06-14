@@ -64,3 +64,9 @@ export function hexToRgba(hex: string, fallback: string): string {
   }
   return fallback;
 }
+
+export function isTransparentBackground(color: string | null | undefined): boolean {
+  if (!color || color.toLowerCase() === "transparent") return true;
+  const c = color.replace("#", "");
+  return c.length === 8 && c.slice(6, 8).toLowerCase() === "00";
+}
