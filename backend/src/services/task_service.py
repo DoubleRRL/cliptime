@@ -569,11 +569,17 @@ class TaskService:
 
         return task
 
+    async def count_user_tasks(self, user_id: str) -> int:
+        """Count all tasks for a user."""
+        return await self.task_repo.count_user_tasks(self.db, user_id)
+
     async def get_user_tasks(
-        self, user_id: str, limit: int = 50
+        self, user_id: str, limit: int = 50, offset: int = 0
     ) -> list[Dict[str, Any]]:
-        """Get all tasks for a user."""
-        return await self.task_repo.get_user_tasks(self.db, user_id, limit)
+        """Get paginated tasks for a user."""
+        return await self.task_repo.get_user_tasks(
+            self.db, user_id, limit, offset
+        )
 
     async def delete_task(self, task_id: str) -> None:
         """Delete a task, its clips, and source media when no other task references it."""

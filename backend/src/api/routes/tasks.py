@@ -90,18 +90,32 @@ async def _require_task_owner(
 
 @router.get("/")
 async def list_tasks(
-    request: Request, db: AsyncSession = Depends(get_db), limit: int = 50
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
 ):
     """
-    Get all tasks for the authenticated user.
+    Get paginated tasks for the authenticated user.
     """
     user_id = get_current_user_id(request)
+    page_limit = max(1, min(limit, 500))
+    page_offset = max(0, offset)
 
     try:
         task_service = TaskService(db)
-        tasks = await task_service.get_user_tasks(user_id, limit)
+        total = await task_service.count_user_tasks(user_id)
+        tasks = await task_service.get_user_tasks(
+            user_id, page_limit, page_offset
+        )
 
-        return {"tasks": tasks, "total": len(tasks)}
+        return {
+            "tasks": tasks,
+            "total": total,
+            "limit": page_limit,
+            "offset": page_offset,
+            "has_more": page_offset + len(tasks) < total,
+        }
 
     except Exception as e:
         logger.error(f"Error retrieving user tasks: {e}")

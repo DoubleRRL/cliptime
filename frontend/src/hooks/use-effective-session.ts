@@ -2,9 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { useSession } from "@/lib/auth-client";
-import { isLocalSingleUserMode } from "@/lib/app-flags";
-
 export type EffectiveUser = {
   id: string;
   name: string;
@@ -47,15 +44,10 @@ async function fetchLocalUser(): Promise<EffectiveUser | null> {
 }
 
 export function useEffectiveSession(): EffectiveSessionState {
-  const authSession = useSession();
-  const [localUser, setLocalUser] = useState<EffectiveUser | null>(
-    isLocalSingleUserMode ? cachedLocalUser : null,
-  );
-  const [localPending, setLocalPending] = useState(isLocalSingleUserMode);
+  const [localUser, setLocalUser] = useState<EffectiveUser | null>(cachedLocalUser);
+  const [localPending, setLocalPending] = useState(!cachedLocalUser);
 
   useEffect(() => {
-    if (!isLocalSingleUserMode) return;
-
     let cancelled = false;
     void fetchLocalUser().then((user) => {
       if (cancelled) return;
@@ -68,23 +60,8 @@ export function useEffectiveSession(): EffectiveSessionState {
     };
   }, []);
 
-  if (isLocalSingleUserMode) {
-    return {
-      user: localUser,
-      isPending: localPending,
-    };
-  }
-
-  const user = authSession.data?.user;
   return {
-    user: user
-      ? {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          is_admin: Boolean((user as { is_admin?: boolean }).is_admin),
-        }
-      : null,
-    isPending: authSession.isPending,
+    user: localUser,
+    isPending: localPending,
   };
 }

@@ -3,6 +3,7 @@
 import { LeftRail } from "@/components/console/left-rail";
 import { CenterClips } from "@/components/console/center-clips";
 import { ClipEditorModal } from "@/components/console/clip-editor-modal";
+import { SettingsModal } from "@/components/console/settings-modal";
 import type { ConsoleClip, ConsoleSession, ConsoleSessionSettings } from "@/components/console/types";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { TaskProgressState } from "@/hooks/use-task-progress";
@@ -12,14 +13,20 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+type SettingsSection = "defaults" | "storage" | "admin";
+
 type ConsoleShellProps = {
   sessions: ConsoleSession[];
+  sessionTotal: number;
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   clips: ConsoleClip[];
   onClipsChange: (clips: ConsoleClip[]) => void;
   sessionSettings: ConsoleSessionSettings | null;
   loading: boolean;
+  loadingMoreSessions?: boolean;
+  storageRefreshKey?: number;
+  onStorageChanged?: () => void;
   progress: TaskProgressState;
   onRefresh: () => void;
   onSessionCreated: (sessionId: string) => void;
@@ -34,12 +41,16 @@ type ConsoleShellProps = {
 
 export function ConsoleShell({
   sessions,
+  sessionTotal,
   activeSessionId,
   onSelectSession,
   clips,
   onClipsChange,
   sessionSettings,
   loading,
+  loadingMoreSessions = false,
+  storageRefreshKey = 0,
+  onStorageChanged,
   progress,
   onRefresh,
   onSessionCreated,
@@ -54,6 +65,8 @@ export function ConsoleShell({
   const [activeClipId, setActiveClipId] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [mobileRailOpen, setMobileRailOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("defaults");
 
   const activeClip = clips.find((clip) => clip.id === activeClipId) ?? null;
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
@@ -69,6 +82,11 @@ export function ConsoleShell({
     setActiveClipId(null);
     onSelectSession(id);
     setMobileRailOpen(false);
+  };
+
+  const openSettings = (section: SettingsSection = "defaults") => {
+    setSettingsSection(section);
+    setSettingsOpen(true);
   };
 
   useEffect(() => {
@@ -98,13 +116,15 @@ export function ConsoleShell({
           </Link>
         </div>
         <div className="flex items-center gap-1">
-          <Link
-            href="/settings"
-            className="inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm text-[var(--console-text-muted)] transition-colors hover:bg-accent hover:text-[var(--console-text)]"
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-8 gap-1.5 px-3 text-sm text-[var(--console-text-muted)] hover:text-[var(--console-text)]"
+            onClick={() => openSettings("defaults")}
           >
             <Settings className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Settings</span>
-          </Link>
+          </Button>
           <ThemeToggle />
         </div>
       </header>
@@ -127,12 +147,16 @@ export function ConsoleShell({
           )}
           taskId={activeSessionId}
           sessions={sessions}
+          sessionTotal={sessionTotal}
           activeSessionId={activeSessionId}
           onSelectSession={handleSelectSession}
           clips={clips}
           onClipsChange={onClipsChange}
           activeClipId={activeClipId}
           loading={loading}
+          loadingMoreSessions={loadingMoreSessions}
+          storageRefreshKey={storageRefreshKey}
+          onOpenStorage={() => openSettings("storage")}
           onRefresh={onRefresh}
           onSessionCreated={onSessionCreated}
           onDeleteSession={onDeleteSession}
@@ -171,6 +195,14 @@ export function ConsoleShell({
           setEditorOpen(false);
         }}
         onRegeneratingChange={onRegeneratingChange}
+      />
+
+      <SettingsModal
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        initialSection={settingsSection}
+        storageRefreshKey={storageRefreshKey}
+        onStorageChanged={onStorageChanged}
       />
     </div>
   );

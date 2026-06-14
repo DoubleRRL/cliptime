@@ -32,7 +32,7 @@ import {
   Menu,
   X,
 } from "lucide-react";
-import { isLandingOnlyModeEnabled, isLocalSingleUserMode } from "@/lib/app-flags";
+import { isLandingOnlyModeEnabled } from "@/lib/app-flags";
 
 const HOSTED_APP_URL = "https://supoclip.com";
 
@@ -124,8 +124,7 @@ const STEPS = [
 export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const showAuthButtons = !isLandingOnlyModeEnabled && !isLocalSingleUserMode;
-  const showLocalAppCta = isLocalSingleUserMode && !isLandingOnlyModeEnabled;
+  const showHostedAppCta = isLandingOnlyModeEnabled;
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -187,28 +186,17 @@ export default function LandingPage() {
           {/* Desktop auth buttons */}
           <div className="hidden md:flex items-center gap-3">
             <ThemeToggle />
-            {showAuthButtons ? (
-              <>
-                <Link href="/sign-in">
-                  <Button variant="ghost" size="sm">
-                    Sign In
-                  </Button>
-                </Link>
-                <Link href="/sign-up">
-                  <Button size="sm">Get Started</Button>
-                </Link>
-              </>
-            ) : showLocalAppCta ? (
-              <Link href="/">
-                <Button size="sm">Open App</Button>
-              </Link>
-            ) : (
+            {showHostedAppCta ? (
               <a href={HOSTED_APP_URL} target="_blank" rel="noopener noreferrer">
                 <Button size="sm">
                   Open Hosted App
                   <ExternalLink className="w-3.5 h-3.5" />
                 </Button>
               </a>
+            ) : (
+              <Link href="/">
+                <Button size="sm">Open App</Button>
+              </Link>
             )}
           </div>
 
@@ -254,28 +242,17 @@ export default function LandingPage() {
               </a>
               <Separator className="my-2" />
               <div className="flex flex-col gap-2 px-3 pt-1">
-                {showAuthButtons ? (
-                  <>
-                    <Link href="/sign-in" onClick={() => setMobileNavOpen(false)}>
-                      <Button variant="outline" size="sm" className="w-full">
-                        Sign In
-                      </Button>
-                    </Link>
-                    <Link href="/sign-up" onClick={() => setMobileNavOpen(false)}>
-                      <Button size="sm" className="w-full">Get Started</Button>
-                    </Link>
-                  </>
-                ) : showLocalAppCta ? (
-                  <Link href="/" onClick={() => setMobileNavOpen(false)}>
-                    <Button size="sm" className="w-full">Open App</Button>
-                  </Link>
-                ) : (
+                {showHostedAppCta ? (
                   <a href={HOSTED_APP_URL} target="_blank" rel="noopener noreferrer">
                     <Button size="sm" className="w-full">
                       Open Hosted App
                       <ExternalLink className="w-3.5 h-3.5" />
                     </Button>
                   </a>
+                ) : (
+                  <Link href="/" onClick={() => setMobileNavOpen(false)}>
+                    <Button size="sm" className="w-full">Open App</Button>
+                  </Link>
                 )}
               </div>
             </div>
@@ -340,27 +317,20 @@ export default function LandingPage() {
                   animation: "landing-fade-in-up 0.6s ease-out 0.3s both",
                 }}
               >
-                {showAuthButtons ? (
-                  <Link href="/sign-up">
-                    <Button size="lg" className="px-8 h-12 text-sm">
-                      Start Clipping
-                      <ArrowRight className="w-4 h-4" />
-                    </Button>
-                  </Link>
-                ) : showLocalAppCta ? (
-                  <Link href="/">
-                    <Button size="lg" className="px-8 h-12 text-sm">
-                      Open App
-                      <ArrowRight className="w-4 h-4" />
-                    </Button>
-                  </Link>
-                ) : (
+                {showHostedAppCta ? (
                   <a href={HOSTED_APP_URL} target="_blank" rel="noopener noreferrer">
                     <Button size="lg" className="px-8 h-12 text-sm">
                       Use Hosted App
                       <ExternalLink className="w-4 h-4" />
                     </Button>
                   </a>
+                ) : (
+                  <Link href="/">
+                    <Button size="lg" className="px-8 h-12 text-sm">
+                      Open App
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </Link>
                 )}
                 <a
                   href="https://github.com/FujiwaraChoki/supoclip"
@@ -565,27 +535,20 @@ export default function LandingPage() {
                       <ExternalLink className="w-3.5 h-3.5 opacity-50" />
                     </Button>
                   </a>
-                  {showAuthButtons ? (
-                    <Link href="/sign-up">
-                      <Button variant="outline">
-                        Try the hosted version
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </Link>
-                  ) : showLocalAppCta ? (
-                    <Link href="/">
-                      <Button variant="outline">
-                        Open App
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </Link>
-                  ) : (
+                  {showHostedAppCta ? (
                     <a href={HOSTED_APP_URL} target="_blank" rel="noopener noreferrer">
                       <Button variant="outline">
                         Open hosted version
                         <ExternalLink className="w-4 h-4" />
                       </Button>
                     </a>
+                  ) : (
+                    <Link href="/">
+                      <Button variant="outline">
+                        Open App
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    </Link>
                   )}
                 </div>
               </CardContent>
@@ -609,27 +572,20 @@ export default function LandingPage() {
             Turn your next video into scroll-stopping shorts. Free, open source,
             no credit card required.
           </p>
-          {showAuthButtons ? (
-            <Link href="/sign-up">
-              <Button size="lg" className="px-10 h-12 text-sm">
-                Get Started Free
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
-          ) : showLocalAppCta ? (
-            <Link href="/">
-              <Button size="lg" className="px-10 h-12 text-sm">
-                Open App
-                <ArrowRight className="w-4 h-4" />
-              </Button>
-            </Link>
-          ) : (
+          {showHostedAppCta ? (
             <a href={HOSTED_APP_URL} target="_blank" rel="noopener noreferrer">
               <Button size="lg" className="px-10 h-12 text-sm">
                 Open Hosted App
                 <ExternalLink className="w-4 h-4" />
               </Button>
             </a>
+          ) : (
+            <Link href="/">
+              <Button size="lg" className="px-10 h-12 text-sm">
+                Open App
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </Link>
           )}
         </ScrollReveal>
       </section>

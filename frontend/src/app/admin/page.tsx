@@ -28,9 +28,11 @@ export default async function AdminPage({
     return (
       <main className="mx-auto max-w-2xl px-6 py-16">
         <h1 className="text-2xl font-semibold">Admin</h1>
-        <p className="mt-3 text-sm text-muted-foreground">You need to sign in to view this page.</p>
-        <Link href="/sign-in" className="mt-6 inline-block text-sm font-medium text-foreground underline">
-          Go to sign in
+        <p className="mt-3 text-sm text-muted-foreground">
+          Unable to load the local user. Check the database connection and try again.
+        </p>
+        <Link href="/" className="mt-6 inline-block text-sm font-medium text-foreground underline">
+          Back to app
         </Link>
       </main>
     );

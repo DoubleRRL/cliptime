@@ -272,10 +272,20 @@ class TaskRepository:
         logger.info(f"Updated task {task_id} with {len(clip_ids)} clips")
 
     @staticmethod
+    async def count_user_tasks(db: AsyncSession, user_id: str) -> int:
+        """Count all tasks for a user."""
+        result = await db.execute(
+            text("SELECT COUNT(*) AS count FROM tasks WHERE user_id = :user_id"),
+            {"user_id": user_id},
+        )
+        row = result.fetchone()
+        return int(row.count) if row else 0
+
+    @staticmethod
     async def get_user_tasks(
-        db: AsyncSession, user_id: str, limit: int = 50
+        db: AsyncSession, user_id: str, limit: int = 50, offset: int = 0
     ) -> List[Dict[str, Any]]:
-        """Get all tasks for a user."""
+        """Get paginated tasks for a user."""
         result = await db.execute(
             text("""
                 SELECT t.*, s.title as source_title, s.type as source_type,
@@ -284,9 +294,9 @@ class TaskRepository:
                 LEFT JOIN sources s ON t.source_id = s.id
                 WHERE t.user_id = :user_id
                 ORDER BY t.created_at DESC
-                LIMIT :limit
+                LIMIT :limit OFFSET :offset
             """),
-            {"user_id": user_id, "limit": limit},
+            {"user_id": user_id, "limit": limit, "offset": offset},
         )
 
         tasks = []

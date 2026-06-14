@@ -14,7 +14,7 @@ describe("clip-display-title", () => {
   });
 
   it("truncates long fallback titles", () => {
-    const long = "A".repeat(60);
+    const long = "A".repeat(CARD_TITLE_MAX_LEN + 10);
     expect(sanitizeForCard(long).length).toBeLessThanOrEqual(CARD_TITLE_MAX_LEN);
     expect(sanitizeForCard(long).endsWith("…")).toBe(true);
   });

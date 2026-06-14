@@ -8,29 +8,24 @@ import { Download, FolderOpen, Plus, RefreshCw } from "lucide-react";
 import { NewSessionDialog } from "@/components/console/new-session-dialog";
 import { SessionRow } from "@/components/console/session-row";
 import { ClipQueueRow } from "@/components/console/clip-queue-row";
+import { StorageSummaryBar } from "@/components/console/storage-summary";
 import { toast } from "sonner";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 type LeftRailProps = {
   className?: string;
   taskId: string | null;
   sessions: ConsoleSession[];
+  sessionTotal: number;
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   clips: ConsoleClip[];
   onClipsChange: (clips: ConsoleClip[]) => void;
   activeClipId: string | null;
   loading: boolean;
+  loadingMoreSessions?: boolean;
+  storageRefreshKey?: number;
+  onOpenStorage?: () => void;
   onRefresh: () => void;
   onSessionCreated: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
@@ -42,12 +37,16 @@ export function LeftRail({
   className,
   taskId,
   sessions,
+  sessionTotal,
   activeSessionId,
   onSelectSession,
   clips,
   onClipsChange,
   activeClipId,
   loading,
+  loadingMoreSessions = false,
+  storageRefreshKey = 0,
+  onOpenStorage,
   onRefresh,
   onSessionCreated,
   onDeleteSession,
@@ -56,8 +55,6 @@ export function LeftRail({
 }: LeftRailProps) {
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const deleteTarget = sessions.find((session) => session.id === deleteTargetId) ?? null;
   const activeClipRef = useRef<HTMLLIElement | null>(null);
 
   useEffect(() => {
@@ -65,6 +62,10 @@ export function LeftRail({
   }, [activeClipId]);
   const selectedClips = clips.filter((clip) => clip.selected);
   const selectedCount = selectedClips.length;
+  const sessionLabel =
+    sessionTotal > sessions.length
+      ? `${sessions.length} of ${sessionTotal}`
+      : String(sessions.length);
 
   const toggleClip = (clipId: string) => {
     onClipsChange(
@@ -130,7 +131,7 @@ export function LeftRail({
 
         <div className="flex items-center justify-between border-b border-[var(--console-border)] px-3 py-2">
           <span className="text-xs font-medium uppercase tracking-wider text-[var(--console-text-muted)]">
-            Sessions
+            Sessions · {sessionLabel}
           </span>
           <Button
             type="button"
@@ -144,7 +145,7 @@ export function LeftRail({
           </Button>
         </div>
 
-        <div className="max-h-[38%] overflow-y-auto p-2">
+        <div className="min-h-0 flex-[0.45] overflow-y-auto p-2">
           <ul className="space-y-1.5">
             {sessions.map((session) => (
               <li key={session.id}>
@@ -152,10 +153,19 @@ export function LeftRail({
                   session={session}
                   isActive={session.id === activeSessionId}
                   onSelect={() => onSelectSession(session.id)}
-                  onDelete={() => setDeleteTargetId(session.id)}
+                  onDelete={
+                    session.status === "processing"
+                      ? undefined
+                      : () => onDeleteSession(session.id)
+                  }
                 />
               </li>
             ))}
+            {loadingMoreSessions && (
+              <li className="px-3 py-2 text-center text-xs text-[var(--console-text-muted)]">
+                Loading older sessions…
+              </li>
+            )}
             {sessions.length === 0 && !loading && (
               <li className="rounded-xl border border-dashed border-[var(--console-border)] px-3 py-6 text-center text-xs text-[var(--console-text-muted)]">
                 No sessions yet. Start one with a YouTube link or video upload.
@@ -196,7 +206,11 @@ export function LeftRail({
           )}
         </div>
 
-        <div className="border-t border-[var(--console-border)] p-3">
+        <div className="space-y-2 border-t border-[var(--console-border)] p-3">
+          <StorageSummaryBar
+            refreshKey={storageRefreshKey}
+            onOpenStorage={onOpenStorage}
+          />
           <Button
             type="button"
             className="w-full bg-[var(--console-terracotta)] transition-transform active:scale-[0.98] hover:bg-[var(--console-terracotta-muted)]"
@@ -218,37 +232,6 @@ export function LeftRail({
         onOpenChange={setNewSessionOpen}
         onCreated={onSessionCreated}
       />
-
-      <AlertDialog
-        open={deleteTargetId != null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTargetId(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete session?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Delete &ldquo;{deleteTarget?.title ?? "this session"}&rdquo; and its clips?
-              Uploaded source video will be removed if no other session uses it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (deleteTargetId) {
-                  onDeleteSession(deleteTargetId);
-                  setDeleteTargetId(null);
-                }
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }

@@ -7,6 +7,7 @@ import type { ConsoleSession, ConsoleClip, ConsoleSessionSettings } from "@/comp
 import { useTaskProgress } from "@/hooks/use-task-progress";
 
 const ACTIVE_SESSION_KEY = "supoclip:activeSessionId";
+const SESSION_PAGE_SIZE = 100;
 
 function mapTaskToSession(task: Record<string, unknown>): ConsoleSession {
   const progressRaw = task.progress;
@@ -62,18 +63,47 @@ export function ConsoleApp() {
   const [clips, setClips] = useState<ConsoleClip[]>([]);
   const [sessionSettings, setSessionSettings] = useState<ConsoleSessionSettings | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMoreSessions, setLoadingMoreSessions] = useState(false);
+  const [sessionTotal, setSessionTotal] = useState(0);
+  const [storageRefreshKey, setStorageRefreshKey] = useState(0);
   const [regeneratingClipId, setRegeneratingClipId] = useState<string | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
 
   const loadSessions = useCallback(async () => {
+    setLoading(true);
     try {
-      const response = await fetch("/api/tasks");
-      if (!response.ok) return;
-      const data = await response.json();
-      const tasks = (data.tasks || data || []) as Array<Record<string, unknown>>;
-      const mapped = tasks.map(mapTaskToSession);
+      const allTasks: Array<Record<string, unknown>> = [];
+      let offset = 0;
+      let total = 0;
+
+      while (true) {
+        if (offset > 0) {
+          setLoadingMoreSessions(true);
+        }
+
+        const response = await fetch(
+          `/api/tasks?limit=${SESSION_PAGE_SIZE}&offset=${offset}`,
+        );
+        if (!response.ok) {
+          break;
+        }
+
+        const data = await response.json();
+        const page = (data.tasks || []) as Array<Record<string, unknown>>;
+        total = Number(data.total ?? page.length);
+        allTasks.push(...page);
+
+        const hasMore = Boolean(data.has_more);
+        if (!hasMore || page.length === 0) {
+          break;
+        }
+        offset += SESSION_PAGE_SIZE;
+      }
+
+      const mapped = allTasks.map(mapTaskToSession);
       setSessions(mapped);
+      setSessionTotal(total);
       setActiveSessionId((current) => {
         if (current && mapped.some((session) => session.id === current)) {
           return current;
@@ -89,6 +119,7 @@ export function ConsoleApp() {
       });
     } finally {
       setLoading(false);
+      setLoadingMoreSessions(false);
     }
   }, []);
 
@@ -213,6 +244,8 @@ export function ConsoleApp() {
 
       setSessions((previous) => {
         const remaining = previous.filter((session) => session.id !== sessionId);
+        setSessionTotal((current) => Math.max(0, current - 1));
+        setStorageRefreshKey((current) => current + 1);
         setActiveSessionId((current) => {
           if (current !== sessionId) return current;
           if (current === sessionId) {
@@ -250,12 +283,16 @@ export function ConsoleApp() {
   return (
     <ConsoleShell
       sessions={sessions}
+      sessionTotal={sessionTotal}
       activeSessionId={activeSessionId}
       onSelectSession={handleSelectSession}
       clips={clips}
       onClipsChange={setClips}
       sessionSettings={sessionSettings}
       loading={loading}
+      loadingMoreSessions={loadingMoreSessions}
+      storageRefreshKey={storageRefreshKey}
+      onStorageChanged={() => setStorageRefreshKey((current) => current + 1)}
       progress={progressState}
       onRefresh={loadSessions}
       onSessionCreated={(sessionId) => {

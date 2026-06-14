@@ -48,8 +48,6 @@ export default defineConfig({
         DATABASE_URL: databaseUrl,
         NEXT_PUBLIC_APP_URL: frontendBaseUrl,
         BETTER_AUTH_URL: frontendBaseUrl,
-        LOCAL_SINGLE_USER: process.env.LOCAL_SINGLE_USER ?? "true",
-        NEXT_PUBLIC_LOCAL_SINGLE_USER: process.env.NEXT_PUBLIC_LOCAL_SINGLE_USER ?? "true",
         NEXT_PUBLIC_API_URL: backendBaseUrl,
         BACKEND_INTERNAL_URL: backendBaseUrl,
         BACKEND_AUTH_SECRET: backendAuthSecret,

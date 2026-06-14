@@ -24,7 +24,9 @@ describe("/api/tasks", () => {
   it("returns 401 when unauthenticated", async () => {
     vi.mocked(getEffectiveSession).mockResolvedValue(null);
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost/api/tasks") as never,
+    );
 
     expect(response.status).toBe(401);
   });
@@ -44,10 +46,12 @@ describe("/api/tasks", () => {
       }),
     );
 
-    const response = await GET();
+    const response = await GET(
+      new Request("http://localhost/api/tasks?limit=100&offset=0") as never,
+    );
 
     expect(fetchBackend).toHaveBeenCalledWith(
-      "/tasks/",
+      "/tasks/?limit=100&offset=0",
       expect.objectContaining({
         method: "GET",
         userId: "user-1",
