@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  baseToBurnedIn,
+  burnedInToBase,
   getScaledFontSize,
   previewDisplayFontSize,
   resolveRenderFontSize,
@@ -14,6 +16,21 @@ describe("resolveRenderFontSize", () => {
   it("applies 1080p width scaling by default", () => {
     expect(resolveRenderFontSize(48)).toBe(72);
     expect(getScaledFontSize(48, 1080)).toBe(72);
+  });
+});
+
+describe("baseToBurnedIn and burnedInToBase", () => {
+  it("maps base 32 to 48px export size", () => {
+    expect(baseToBurnedIn(32)).toBe(48);
+  });
+
+  it("maps 48px export back to base 32", () => {
+    expect(burnedInToBase(48)).toBe(32);
+  });
+
+  it("round-trips common Riverside default", () => {
+    const base = 32;
+    expect(burnedInToBase(baseToBurnedIn(base))).toBe(base);
   });
 });
 

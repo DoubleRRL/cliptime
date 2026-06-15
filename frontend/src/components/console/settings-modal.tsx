@@ -29,8 +29,16 @@ import { Type, Palette, CheckCircle, AlertCircle, Shield } from "lucide-react";
 import { ModelSelector } from "@/components/model-selector";
 import { StorageDetailsSection } from "@/components/console/storage-details-section";
 import { AppearanceSetting } from "@/components/console/appearance-setting";
+import { SettingsCaptionPreview } from "@/components/console/settings-caption-preview";
+import type { CaptionStyleTemplate } from "@/components/console/caption-style-preview";
 import { cn } from "@/lib/utils";
 import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
+import {
+  baseToBurnedIn,
+  burnedInToBase,
+  BURNED_IN_MAX,
+  BURNED_IN_MIN,
+} from "@/lib/caption-fit";
 
 type SettingsSection = "defaults" | "storage" | "admin";
 
@@ -38,13 +46,10 @@ interface UserPreferences {
   fontFamily: string;
   fontSize: number;
   fontColor: string;
+  highlightColor: string;
+  pillColor: string;
   captionTemplate: string;
   llmModel: string | null;
-}
-
-interface CaptionTemplateOption {
-  id: string;
-  name: string;
 }
 
 type SettingsModalProps = {
@@ -70,11 +75,13 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [fontFamily, setFontFamily] = useState(RIVERSIDE_CAPTION_DEFAULTS.fontFamily);
-  const [fontSize, setFontSize] = useState(RIVERSIDE_CAPTION_DEFAULTS.fontSize);
+  const [burnedInPx, setBurnedInPx] = useState(baseToBurnedIn(RIVERSIDE_CAPTION_DEFAULTS.fontSize));
   const [fontColor, setFontColor] = useState(RIVERSIDE_CAPTION_DEFAULTS.fontColor);
+  const [highlightColor, setHighlightColor] = useState(RIVERSIDE_CAPTION_DEFAULTS.highlightColor);
+  const [pillColor, setPillColor] = useState(RIVERSIDE_CAPTION_DEFAULTS.backgroundColor);
   const [captionTemplate, setCaptionTemplate] = useState(RIVERSIDE_CAPTION_DEFAULTS.captionTemplate);
   const [llmModel, setLlmModel] = useState<string | null>(null);
-  const [availableTemplates, setAvailableTemplates] = useState<CaptionTemplateOption[]>([]);
+  const [availableTemplates, setAvailableTemplates] = useState<CaptionStyleTemplate[]>([]);
   const [availableFonts, setAvailableFonts] = useState<
     Array<{ name: string; display_name: string }>
   >([]);
@@ -84,6 +91,8 @@ export function SettingsModal({
   const [success, setSuccess] = useState(false);
   const { user, isPending } = useEffectiveSession();
   const isAdmin = Boolean(user?.is_admin);
+  const activeTemplate =
+    availableTemplates.find((template) => template.id === captionTemplate) ?? null;
 
   useEffect(() => {
     if (open) {
@@ -155,9 +164,11 @@ export function SettingsModal({
         if (response.ok) {
           const data: UserPreferences = await response.json();
           setFontFamily(data.fontFamily);
-          setFontSize(data.fontSize);
+          setBurnedInPx(baseToBurnedIn(data.fontSize));
           setFontColor(data.fontColor);
-          setCaptionTemplate(data.captionTemplate || "default");
+          setHighlightColor(data.highlightColor || RIVERSIDE_CAPTION_DEFAULTS.highlightColor);
+          setPillColor(data.pillColor || RIVERSIDE_CAPTION_DEFAULTS.backgroundColor);
+          setCaptionTemplate(data.captionTemplate || RIVERSIDE_CAPTION_DEFAULTS.captionTemplate);
           setLlmModel(data.llmModel ?? null);
         }
       } catch (loadError) {
@@ -181,7 +192,7 @@ export function SettingsModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fontFamily,
-          fontSize,
+          fontSize: burnedInToBase(burnedInPx),
           fontColor,
           captionTemplate,
           llmModel,
@@ -277,12 +288,12 @@ export function SettingsModal({
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-sm font-medium">Font size: {fontSize}px</Label>
+                  <Label className="text-sm font-medium">Subtitle size: {burnedInPx}px</Label>
                   <Slider
-                    value={[fontSize]}
-                    onValueChange={(value) => setFontSize(value[0])}
-                    max={48}
-                    min={12}
+                    value={[burnedInPx]}
+                    onValueChange={(value) => setBurnedInPx(value[0])}
+                    max={BURNED_IN_MAX}
+                    min={BURNED_IN_MIN}
                     step={2}
                     disabled={isLoading}
                   />
@@ -301,7 +312,7 @@ export function SettingsModal({
                     <SelectContent>
                       {availableTemplates.map((template) => (
                         <SelectItem key={template.id} value={template.id}>
-                          {template.name}
+                          {template.name ?? template.id}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -331,6 +342,15 @@ export function SettingsModal({
                   </div>
                 </div>
 
+                <SettingsCaptionPreview
+                  fontFamily={fontFamily}
+                  burnedInPx={burnedInPx}
+                  fontColor={fontColor}
+                  highlightColor={highlightColor}
+                  textBackgroundColor={pillColor}
+                  template={activeTemplate}
+                />
+
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Default AI model</Label>
                   <ModelSelector
@@ -339,22 +359,6 @@ export function SettingsModal({
                     onChange={setLlmModel}
                     disabled={isLoading}
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">Preview</Label>
-                  <div className="flex min-h-[100px] items-center justify-center rounded-lg bg-black p-6">
-                    <p
-                      style={{
-                        color: fontColor,
-                        fontSize: `${Math.min(fontSize, 32)}px`,
-                        fontFamily: `'${fontFamily}', system-ui, -apple-system, sans-serif`,
-                      }}
-                      className="text-center font-medium leading-snug"
-                    >
-                      Your subtitle will look like this
-                    </p>
-                  </div>
                 </div>
 
                 {success && (

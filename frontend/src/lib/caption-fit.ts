@@ -6,6 +6,12 @@ export const RENDER_HEIGHT = 1920;
 const MIN_FONT_SIZE = 24;
 const MAX_FONT_SIZE = 72;
 const REFERENCE_WIDTH = 720;
+const BASE_FONT_MIN = 12;
+const BASE_FONT_MAX = 48;
+
+/** Burned-in subtitle px on 1080×1920 exports (matches backend clamp). */
+export const BURNED_IN_MIN = MIN_FONT_SIZE;
+export const BURNED_IN_MAX = MAX_FONT_SIZE;
 
 export function getScaledFontSize(baseFontSize: number, videoWidth: number): number {
   const scaled = Math.round(baseFontSize * (videoWidth / REFERENCE_WIDTH));
@@ -20,6 +26,17 @@ export function resolveRenderFontSize(
     return getScaledFontSize(baseFontSize, RENDER_WIDTH);
   }
   return baseFontSize;
+}
+
+/** Export px burned into 1080×1920 clips from stored base font size. */
+export function baseToBurnedIn(baseFontSize: number): number {
+  return resolveRenderFontSize(baseFontSize);
+}
+
+/** Convert export px from Settings slider back to stored base font size. */
+export function burnedInToBase(burnedInPx: number): number {
+  const base = Math.round(burnedInPx * (REFERENCE_WIDTH / RENDER_WIDTH));
+  return Math.max(BASE_FONT_MIN, Math.min(BASE_FONT_MAX, base));
 }
 
 export function getSubtitleMaxWidth(videoWidth: number): number {
