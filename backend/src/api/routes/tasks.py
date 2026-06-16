@@ -145,10 +145,19 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     highlight_color = _normalize_font_color(
         font_options.get("highlight_color", "#8B5CF6"), default="#8B5CF6"
     )
-    background_color = font_options.get("background_color") or "#1A1A1ACC"
-    if isinstance(background_color, str) and not background_color.startswith("#"):
-        background_color = "#1A1A1ACC"
+    raw_background_color = font_options.get("background_color")
+    background_color = None
+    if raw_background_color is not None:
+        background_color = str(raw_background_color).strip()
+        if not background_color or background_color.lower() == "transparent":
+            background_color = None
+        elif not background_color.startswith("#"):
+            background_color = "#1A1A1ACC"
     caption_template = data.get("caption_template", config.default_caption_template)
+    position_y_raw = data.get("position_y")
+    position_y = float(position_y_raw) if position_y_raw is not None else None
+    if position_y is not None:
+        position_y = max(0.55, min(0.85, position_y))
     processing_mode = data.get("processing_mode", config.default_processing_mode)
     if processing_mode not in {"fast", "balanced", "quality"}:
         processing_mode = config.default_processing_mode
@@ -218,6 +227,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             highlight_color,
             background_color,
             llm_model=llm_model,
+            position_y=position_y,
         )
 
         # Save source metadata for resume/retries in environments without sources.url column

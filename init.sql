@@ -23,6 +23,7 @@ CREATE TABLE users (
     default_caption_template VARCHAR(50) DEFAULT 'riverside',
     default_highlight_color VARCHAR(9) DEFAULT '#8B5CF6',
     default_pill_color VARCHAR(9) DEFAULT '#1A1A1ACC',
+    default_position_y REAL DEFAULT 0.77,
     default_llm_model VARCHAR(200),
     is_admin BOOLEAN NOT NULL DEFAULT false
 );

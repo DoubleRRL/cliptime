@@ -1,4 +1,5 @@
 import type { CaptionStyleTemplate } from "@/components/console/caption-style-preview";
+import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 
 export type CaptionTemplateCapabilities = {
   supportsPillBackground: boolean;
@@ -46,4 +47,19 @@ export function applyCaptionTemplateDefaults(
     positionY: template.position_y,
     emphasisCallouts: template.emphasis_callouts ?? true,
   };
+}
+
+export function resolveEffectiveCaptionColors(
+  template: CaptionStyleTemplate | null | undefined,
+  savedHighlight?: string | null,
+  savedPill?: string | null,
+  fallbacks: { highlightColor: string; backgroundColor: string } = RIVERSIDE_CAPTION_DEFAULTS,
+): { highlightColor: string; textBackgroundColor: string } {
+  const caps = getCaptionTemplateCapabilities(template);
+  const highlightColor =
+    template?.highlight_color ?? savedHighlight ?? fallbacks.highlightColor;
+  const textBackgroundColor = caps.supportsBackground
+    ? (template?.background_color ?? savedPill ?? fallbacks.backgroundColor)
+    : "transparent";
+  return { highlightColor, textBackgroundColor };
 }

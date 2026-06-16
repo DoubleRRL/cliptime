@@ -15,15 +15,21 @@ import { ModelSelector } from "@/components/model-selector";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 import {
   buildCaptionTaskOptions,
-  RIVERSIDE_CAPTION_DEFAULTS,
   type CaptionTaskOptions,
 } from "@/lib/caption-defaults";
+import type { CaptionStyleTemplate } from "@/components/console/caption-style-preview";
+import {
+  buildNewSessionCreatePayload,
+  formatNewSessionCaptionSummary,
+} from "@/lib/new-session-caption-summary";
 
 type NewSessionDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (taskId: string) => void;
 };
+
+type DefaultsStatus = "loading" | "ready" | "error";
 
 export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDialogProps) {
   const [uploadedPath, setUploadedPath] = useState<string | null>(null);
@@ -35,6 +41,8 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
   const [captionOptions, setCaptionOptions] = useState<CaptionTaskOptions>(
     buildCaptionTaskOptions(null),
   );
+  const [defaultsStatus, setDefaultsStatus] = useState<DefaultsStatus>("loading");
+  const [templateDisplayName, setTemplateDisplayName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSuggestedModel = useCallback((model: string) => {
@@ -42,32 +50,59 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
   }, []);
 
   const isBusy = isSubmitting || isUploading;
-  const canStart = Boolean(uploadedPath);
+  const canStart =
+    Boolean(uploadedPath) && defaultsStatus === "ready" && !isSubmitting && !isUploading;
 
   useEffect(() => {
     if (!open) return;
-    fetch("/api/preferences", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : null))
-      .then((data) => {
+
+    setDefaultsStatus("loading");
+    setTemplateDisplayName(null);
+
+    const loadDefaults = async () => {
+      try {
+        const [prefsResponse, templatesResponse] = await Promise.all([
+          fetch("/api/preferences", { cache: "no-store" }),
+          fetch("/api/caption-templates", { cache: "no-store" }),
+        ]);
+
+        if (!prefsResponse.ok) {
+          console.error("Failed to load preferences:", prefsResponse.status);
+          setDefaultsStatus("error");
+          return;
+        }
+
+        const data = await prefsResponse.json();
+        const templatesPayload = templatesResponse.ok ? await templatesResponse.json() : null;
+        const templates = (templatesPayload?.templates || []) as CaptionStyleTemplate[];
+
         if (data?.llmModel) setLlmModel(String(data.llmModel));
+
+        const template =
+          templates.find((entry) => entry.id === data?.captionTemplate) ?? null;
+        setTemplateDisplayName(template?.name ?? data?.captionTemplate ?? null);
         setCaptionOptions(
           buildCaptionTaskOptions(
-            data
-              ? {
-                  fontFamily: data.fontFamily,
-                  fontSize: data.fontSize,
-                  fontColor: data.fontColor,
-                  highlightColor: data.highlightColor ?? data.pillColor,
-                  backgroundColor: data.pillColor,
-                  captionTemplate: data.captionTemplate,
-                }
-              : null,
+            {
+              fontFamily: data.fontFamily,
+              fontSize: data.fontSize,
+              fontColor: data.fontColor,
+              highlightColor: data.highlightColor,
+              backgroundColor: data.pillColor,
+              captionTemplate: data.captionTemplate,
+              positionY: data.positionY,
+            },
+            template,
           ),
         );
-      })
-      .catch(() => {
-        setCaptionOptions(buildCaptionTaskOptions(null));
-      });
+        setDefaultsStatus("ready");
+      } catch (loadError) {
+        console.error("Failed to load session defaults:", loadError);
+        setDefaultsStatus("error");
+      }
+    };
+
+    void loadDefaults();
   }, [open]);
 
   const reset = () => {
@@ -76,6 +111,8 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     setError(null);
     setIsSubmitting(false);
     setIsUploading(false);
+    setDefaultsStatus("loading");
+    setTemplateDisplayName(null);
     setCaptionOptions(buildCaptionTaskOptions(null));
   };
 
@@ -83,21 +120,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     const response = await fetch("/api/tasks/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: { url: videoUrl, title: null },
-        font_options: {
-          font_family: captionOptions.fontFamily,
-          font_size: captionOptions.fontSize,
-          font_color: captionOptions.fontColor,
-          highlight_color: captionOptions.highlightColor,
-          background_color: captionOptions.backgroundColor,
-        },
-        caption_template: captionOptions.captionTemplate,
-        processing_mode: process.env.NEXT_PUBLIC_DEFAULT_PROCESSING_MODE || "quality",
-        output_format: "vertical",
-        add_subtitles: true,
-        ...(llmModel ? { llm_model: llmModel } : {}),
-      }),
+      body: JSON.stringify(buildNewSessionCreatePayload(videoUrl, captionOptions, llmModel)),
     });
 
     if (!response.ok) {
@@ -110,7 +133,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
   };
 
   const handleStartClipping = async () => {
-    if (!uploadedPath) return;
+    if (!uploadedPath || defaultsStatus !== "ready") return;
 
     setIsSubmitting(true);
     setError(null);
@@ -153,6 +176,13 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  const captionSummary =
+    defaultsStatus === "loading"
+      ? "Loading defaults…"
+      : defaultsStatus === "error"
+        ? "Couldn't load saved defaults — check Settings or retry."
+        : formatNewSessionCaptionSummary(captionOptions, templateDisplayName);
 
   return (
     <Sheet
@@ -212,15 +242,17 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
             />
           </div>
 
-          <p className="text-[11px] text-[var(--console-text-muted)]">
-            Captions: {captionOptions.captionTemplate} · {captionOptions.fontSize}px base (
-            {RIVERSIDE_CAPTION_DEFAULTS.positionY * 100}% vertical)
+          <p
+            className="text-[11px] text-[var(--console-text-muted)]"
+            data-testid="new-session-caption-summary"
+          >
+            {captionSummary}
           </p>
 
           <Button
             type="button"
             className="w-full bg-[var(--console-terracotta)] hover:bg-[var(--console-terracotta-muted)]"
-            disabled={!canStart || isBusy}
+            disabled={!canStart}
             onClick={handleStartClipping}
           >
             {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}

@@ -29,6 +29,8 @@ type LeftRailProps = {
   onRefresh: () => void;
   onSessionCreated: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onCancelSession?: (sessionId: string) => void;
+  cancellingSessionId?: string | null;
   onSelectClip: (clipId: string) => void;
   regeneratingClipId?: string | null;
 };
@@ -50,6 +52,8 @@ export function LeftRail({
   onRefresh,
   onSessionCreated,
   onDeleteSession,
+  onCancelSession,
+  cancellingSessionId = null,
   onSelectClip,
   regeneratingClipId = null,
 }: LeftRailProps) {
@@ -153,8 +157,15 @@ export function LeftRail({
                   session={session}
                   isActive={session.id === activeSessionId}
                   onSelect={() => onSelectSession(session.id)}
+                  onCancel={
+                    onCancelSession &&
+                    (session.status === "queued" || session.status === "processing")
+                      ? () => onCancelSession(session.id)
+                      : undefined
+                  }
+                  isCancelling={cancellingSessionId === session.id}
                   onDelete={
-                    session.status === "processing"
+                    session.status === "processing" || session.status === "queued"
                       ? undefined
                       : () => onDeleteSession(session.id)
                   }

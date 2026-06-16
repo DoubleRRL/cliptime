@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,11 @@ import type { CaptionStyleTemplate } from "@/components/console/caption-style-pr
 import { cn } from "@/lib/utils";
 import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
 import {
+  applyCaptionTemplateDefaults,
+  getCaptionTemplateCapabilities,
+  resolveEffectiveCaptionColors,
+} from "@/lib/caption-template-capabilities";
+import {
   baseToBurnedIn,
   burnedInToBase,
   BURNED_IN_MAX,
@@ -49,6 +54,7 @@ interface UserPreferences {
   highlightColor: string;
   pillColor: string;
   captionTemplate: string;
+  positionY: number;
   llmModel: string | null;
 }
 
@@ -80,6 +86,7 @@ export function SettingsModal({
   const [highlightColor, setHighlightColor] = useState(RIVERSIDE_CAPTION_DEFAULTS.highlightColor);
   const [pillColor, setPillColor] = useState(RIVERSIDE_CAPTION_DEFAULTS.backgroundColor);
   const [captionTemplate, setCaptionTemplate] = useState(RIVERSIDE_CAPTION_DEFAULTS.captionTemplate);
+  const [positionY, setPositionY] = useState(RIVERSIDE_CAPTION_DEFAULTS.positionY);
   const [llmModel, setLlmModel] = useState<string | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<CaptionStyleTemplate[]>([]);
   const [availableFonts, setAvailableFonts] = useState<
@@ -93,6 +100,33 @@ export function SettingsModal({
   const isAdmin = Boolean(user?.is_admin);
   const activeTemplate =
     availableTemplates.find((template) => template.id === captionTemplate) ?? null;
+  const previewColors = useMemo(
+    () =>
+      resolveEffectiveCaptionColors(activeTemplate, highlightColor, pillColor),
+    [activeTemplate, highlightColor, pillColor],
+  );
+
+  const handleCaptionTemplateChange = useCallback(
+    (templateId: string) => {
+      setCaptionTemplate(templateId);
+      const template = availableTemplates.find((entry) => entry.id === templateId);
+      if (!template) return;
+
+      const defaults = applyCaptionTemplateDefaults(template);
+      if (defaults.fontColor) setFontColor(defaults.fontColor);
+      if (defaults.highlightColor) setHighlightColor(defaults.highlightColor);
+      if (defaults.fontSize != null) setBurnedInPx(baseToBurnedIn(defaults.fontSize));
+      if (defaults.positionY != null) setPositionY(defaults.positionY);
+
+      const caps = getCaptionTemplateCapabilities(template);
+      if (caps.supportsBackground && defaults.textBackgroundColor) {
+        setPillColor(defaults.textBackgroundColor);
+      } else {
+        setPillColor("transparent");
+      }
+    },
+    [availableTemplates],
+  );
 
   useEffect(() => {
     if (open) {
@@ -169,6 +203,11 @@ export function SettingsModal({
           setHighlightColor(data.highlightColor || RIVERSIDE_CAPTION_DEFAULTS.highlightColor);
           setPillColor(data.pillColor || RIVERSIDE_CAPTION_DEFAULTS.backgroundColor);
           setCaptionTemplate(data.captionTemplate || RIVERSIDE_CAPTION_DEFAULTS.captionTemplate);
+          setPositionY(
+            typeof data.positionY === "number"
+              ? data.positionY
+              : RIVERSIDE_CAPTION_DEFAULTS.positionY,
+          );
           setLlmModel(data.llmModel ?? null);
         }
       } catch (loadError) {
@@ -194,7 +233,13 @@ export function SettingsModal({
           fontFamily,
           fontSize: burnedInToBase(burnedInPx),
           fontColor,
+          highlightColor: previewColors.highlightColor,
+          pillColor:
+            previewColors.textBackgroundColor === "transparent"
+              ? null
+              : previewColors.textBackgroundColor,
           captionTemplate,
+          positionY,
           llmModel,
         }),
       });
@@ -303,7 +348,7 @@ export function SettingsModal({
                   <Label className="text-sm font-medium">Default caption style</Label>
                   <Select
                     value={captionTemplate}
-                    onValueChange={setCaptionTemplate}
+                    onValueChange={handleCaptionTemplateChange}
                     disabled={isLoading}
                   >
                     <SelectTrigger className="w-full">
@@ -342,13 +387,29 @@ export function SettingsModal({
                   </div>
                 </div>
 
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <Label className="font-medium">Vertical position</Label>
+                    <span className="text-muted-foreground">{Math.round(positionY * 100)}%</span>
+                  </div>
+                  <Slider
+                    min={55}
+                    max={85}
+                    step={1}
+                    value={[Math.round(positionY * 100)]}
+                    onValueChange={(value) => setPositionY((value[0] ?? 77) / 100)}
+                    disabled={isLoading}
+                  />
+                </div>
+
                 <SettingsCaptionPreview
                   fontFamily={fontFamily}
                   burnedInPx={burnedInPx}
                   fontColor={fontColor}
-                  highlightColor={highlightColor}
-                  textBackgroundColor={pillColor}
+                  highlightColor={previewColors.highlightColor}
+                  textBackgroundColor={previewColors.textBackgroundColor}
                   template={activeTemplate}
+                  positionY={positionY}
                 />
 
                 <div className="space-y-2">

@@ -236,7 +236,11 @@ export function ClipEditorModal({
     if (defaults.fontSize != null) setFontSize(defaults.fontSize);
     if (defaults.fontColor) setFontColor(defaults.fontColor);
     if (defaults.highlightColor) setHighlightColor(defaults.highlightColor);
-    if (defaults.textBackgroundColor) setTextBackgroundColor(defaults.textBackgroundColor);
+    if (defaults.textBackgroundColor) {
+      setTextBackgroundColor(defaults.textBackgroundColor);
+    } else {
+      setTextBackgroundColor("transparent");
+    }
     if (defaults.emphasisCallouts != null) setEmphasisCallouts(defaults.emphasisCallouts);
   }, []);
 

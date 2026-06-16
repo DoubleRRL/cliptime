@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { SettingsCaptionPreview } from "./settings-caption-preview";
@@ -13,8 +13,18 @@ const riversideTemplate = {
   background_color: "#1A1A1ACC",
 };
 
+const tiktokTemplate = {
+  id: "tiktok",
+  name: "TikTok",
+  animation: "karaoke",
+  background: false,
+  highlight_color: "#FE2C55",
+  stroke_width: 2,
+  shadow: true,
+};
+
 describe("SettingsCaptionPreview", () => {
-  it("shows burned-in export px in the label", () => {
+  it("shows export px badge on the 9:16 frame", () => {
     render(
       <SettingsCaptionPreview
         fontFamily="TikTokSans-Regular"
@@ -23,54 +33,58 @@ describe("SettingsCaptionPreview", () => {
         highlightColor="#8B5CF6"
         textBackgroundColor="#1A1A1ACC"
         template={riversideTemplate}
+        positionY={0.77}
       />,
     );
 
-    expect(screen.getByText("48px in your exported clip")).toBeInTheDocument();
+    expect(screen.getByTestId("export-px-badge")).toHaveTextContent("48px");
+    expect(screen.queryByTestId("export-size-sample")).not.toBeInTheDocument();
   });
 
-  it("renders 1:1 sample at exact export font size", () => {
+  it("renders resizable preview frame with background image", () => {
     render(
       <SettingsCaptionPreview
         fontFamily="TikTokSans-Regular"
         burnedInPx={48}
         fontColor="#FFFFFF"
-        highlightColor="#8B5CF6"
-        textBackgroundColor="#1A1A1ACC"
-        template={riversideTemplate}
+        highlightColor="#FE2C55"
+        textBackgroundColor="transparent"
+        template={tiktokTemplate}
+        positionY={0.75}
       />,
     );
 
-    const sample = screen.getByTestId("export-size-sample");
-    expect(sample.style.fontSize).toBe("48px");
+    const frame = screen.getByTestId("caption-preview-frame");
+    expect(frame).toBeInTheDocument();
+    expect(screen.getByAltText("")).toHaveAttribute(
+      "src",
+      "/images/caption-settings-preview.jpg",
+    );
   });
 
-  it("updates sample font size when burnedInPx changes", () => {
-    const { rerender } = render(
+  it("updates frame width when resize handle is dragged", () => {
+    render(
       <SettingsCaptionPreview
         fontFamily="TikTokSans-Regular"
         burnedInPx={36}
         fontColor="#FFFFFF"
-        highlightColor="#8B5CF6"
-        textBackgroundColor="#1A1A1ACC"
-        template={riversideTemplate}
+        highlightColor="#FE2C55"
+        textBackgroundColor="transparent"
+        template={tiktokTemplate}
+        positionY={0.75}
       />,
     );
 
-    expect(screen.getByTestId("export-size-sample").style.fontSize).toBe("36px");
+    const frame = screen.getByTestId("caption-preview-frame");
+    const initialWidth = frame.style.width;
 
-    rerender(
-      <SettingsCaptionPreview
-        fontFamily="TikTokSans-Regular"
-        burnedInPx={60}
-        fontColor="#FFFFFF"
-        highlightColor="#8B5CF6"
-        textBackgroundColor="#1A1A1ACC"
-        template={riversideTemplate}
-      />,
-    );
+    fireEvent.pointerDown(screen.getByTestId("preview-resize-handle"), {
+      clientX: 500,
+      pointerId: 1,
+    });
+    fireEvent.pointerMove(window, { clientX: 560, pointerId: 1 });
+    fireEvent.pointerUp(window, { pointerId: 1 });
 
-    expect(screen.getByText("60px in your exported clip")).toBeInTheDocument();
-    expect(screen.getByTestId("export-size-sample").style.fontSize).toBe("60px");
+    expect(frame.style.width).not.toBe(initialWidth);
   });
 });

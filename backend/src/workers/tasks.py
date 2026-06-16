@@ -27,9 +27,10 @@ async def process_video_task(
     output_format: str = "vertical",
     add_subtitles: bool = True,
     highlight_color: str = "#8B5CF6",
-    background_color: str = "#1A1A1ACC",
+    background_color: str | None = "#1A1A1ACC",
     cleanup_settings: Dict[str, Any] | None = None,
     llm_model: str | None = None,
+    position_y: float | None = None,
 ) -> Dict[str, Any]:
     """
     Background worker task to process a video.
@@ -100,6 +101,7 @@ async def process_video_task(
                 should_cancel=should_cancel,
                 clip_ready_callback=clip_ready_callback,
                 cleanup_settings=cleanup_settings,
+                position_y=position_y,
             )
 
             logger.info(f"Task {task_id} completed successfully")

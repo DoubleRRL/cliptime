@@ -9,6 +9,20 @@ function isHexColor(value: string): boolean {
   return HEX_6.test(value) || HEX_8.test(value);
 }
 
+function isValidPillColor(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value !== "string") return false;
+  if (value.toLowerCase() === "transparent") return true;
+  return isHexColor(value);
+}
+
+function normalizePillColor(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return null;
+  if (value.toLowerCase() === "transparent") return null;
+  return value;
+}
+
 // GET /api/preferences - Get user preferences
 export async function GET(_: NextRequest) {
   try {
@@ -31,6 +45,7 @@ export async function GET(_: NextRequest) {
         default_highlight_color: true,
         default_pill_color: true,
         default_caption_template: true,
+        default_position_y: true,
         default_llm_model: true,
       },
     });
@@ -49,6 +64,7 @@ export async function GET(_: NextRequest) {
       highlightColor: user.default_highlight_color || "#8B5CF6",
       pillColor: user.default_pill_color || "#1A1A1ACC",
       captionTemplate: user.default_caption_template || "riverside",
+      positionY: user.default_position_y ?? 0.77,
       llmModel: user.default_llm_model || null,
     });
   } catch (error) {
@@ -80,6 +96,7 @@ export async function PATCH(request: NextRequest) {
       highlightColor,
       pillColor,
       captionTemplate,
+      positionY,
       llmModel,
     } = body;
 
@@ -111,9 +128,19 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (pillColor && !isHexColor(pillColor)) {
+    if (pillColor !== undefined && !isValidPillColor(pillColor)) {
       return NextResponse.json(
         { error: "Invalid pillColor" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      positionY !== undefined &&
+      (typeof positionY !== "number" || positionY < 0.55 || positionY > 0.85)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid positionY (must be between 0.55 and 0.85)" },
         { status: 400 }
       );
     }
@@ -147,8 +174,9 @@ export async function PATCH(request: NextRequest) {
         ...(fontSize !== undefined && { default_font_size: fontSize }),
         ...(fontColor !== undefined && { default_font_color: fontColor }),
         ...(highlightColor !== undefined && { default_highlight_color: highlightColor }),
-        ...(pillColor !== undefined && { default_pill_color: pillColor }),
+        ...(pillColor !== undefined && { default_pill_color: normalizePillColor(pillColor) }),
         ...(captionTemplate !== undefined && { default_caption_template: captionTemplate }),
+        ...(positionY !== undefined && { default_position_y: positionY }),
         ...(llmModel !== undefined && { default_llm_model: llmModel }),
       },
       select: {
@@ -158,6 +186,7 @@ export async function PATCH(request: NextRequest) {
         default_highlight_color: true,
         default_pill_color: true,
         default_caption_template: true,
+        default_position_y: true,
         default_llm_model: true,
       },
     });
@@ -167,8 +196,9 @@ export async function PATCH(request: NextRequest) {
       fontSize: updatedUser.default_font_size,
       fontColor: updatedUser.default_font_color,
       highlightColor: updatedUser.default_highlight_color,
-      pillColor: updatedUser.default_pill_color,
+      pillColor: updatedUser.default_pill_color || "transparent",
       captionTemplate: updatedUser.default_caption_template,
+      positionY: updatedUser.default_position_y ?? 0.77,
       llmModel: updatedUser.default_llm_model,
     });
   } catch (error) {

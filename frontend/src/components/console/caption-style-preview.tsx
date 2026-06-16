@@ -38,10 +38,12 @@ type CaptionStylePreviewProps = {
   emphasisCallouts?: boolean;
   emphasisWords?: string[];
   className?: string;
+  frameWidth?: number;
+  backgroundImageUrl?: string;
+  showPositionGuide?: boolean;
 };
 
-const PREVIEW_WIDTH = 240;
-const PREVIEW_HEIGHT = 427;
+const DEFAULT_FRAME_WIDTH = 240;
 const DEFAULT_WORDS = ["YOUR", "CAPTION", "HERE"];
 const WORD_CYCLE_MS = 650;
 
@@ -82,6 +84,9 @@ export function CaptionStylePreview({
   emphasisCallouts = true,
   emphasisWords,
   className,
+  frameWidth = DEFAULT_FRAME_WIDTH,
+  backgroundImageUrl,
+  showPositionGuide = false,
 }: CaptionStylePreviewProps) {
   const [activeWordIndex, setActiveWordIndex] = useState(0);
   const words = useMemo(() => buildWords(template, sampleWords), [template, sampleWords]);
@@ -93,6 +98,7 @@ export function CaptionStylePreview({
   const strokeColor = template?.stroke_color ?? "#000000";
   const resolvedBackground = textBackgroundColor || pillColor || "#1A1A1ACC";
   const transparentBackground = isTransparentBackground(resolvedBackground);
+  const frameHeight = frameWidth * (16 / 9);
 
   const emphasisSet = useMemo(() => {
     const source =
@@ -103,9 +109,9 @@ export function CaptionStylePreview({
 
   const displayFontSize = previewDisplayFontSize(
     fontSize,
-    PREVIEW_HEIGHT,
+    frameHeight,
     RENDER_HEIGHT,
-    PREVIEW_WIDTH,
+    frameWidth,
     words,
   );
 
@@ -142,7 +148,22 @@ export function CaptionStylePreview({
   }, [showKaraoke, words.length]);
 
   return (
-    <div className={className}>
+    <div className={className ?? "relative h-full w-full"}>
+      {backgroundImageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={backgroundImageUrl}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : null}
+      {showPositionGuide ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 z-[5] border-t border-dashed border-white/40"
+          style={{ bottom: `${(1 - resolvedPositionY) * 100}%` }}
+        />
+      ) : null}
       <style>{`
         @keyframes captionWordPop {
           0% { transform: scale(1); }

@@ -6,6 +6,7 @@ import { ConsoleShell } from "@/components/console/console-shell";
 import type { ConsoleSession, ConsoleClip, ConsoleSessionSettings } from "@/components/console/types";
 import { useTaskProgress } from "@/hooks/use-task-progress";
 import { RIVERSIDE_CAPTION_DEFAULTS } from "@/lib/caption-defaults";
+import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 
 const ACTIVE_SESSION_KEY = "supoclip:activeSessionId";
 const SESSION_PAGE_SIZE = 100;
@@ -68,6 +69,7 @@ export function ConsoleApp() {
   const [sessionTotal, setSessionTotal] = useState(0);
   const [storageRefreshKey, setStorageRefreshKey] = useState(0);
   const [regeneratingClipId, setRegeneratingClipId] = useState<string | null>(null);
+  const [cancellingSessionId, setCancellingSessionId] = useState<string | null>(null);
 
   const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
 
@@ -262,6 +264,42 @@ export function ConsoleApp() {
     [],
   );
 
+  const handleCancelSession = useCallback(
+    async (sessionId: string) => {
+      setCancellingSessionId(sessionId);
+      try {
+        const response = await fetch(`/api/tasks/${sessionId}/cancel`, { method: "POST" });
+        if (!response.ok) {
+          const parsed = await parseApiError(response, "Failed to stop generation");
+          toast.error(formatSupportMessage(parsed));
+          return;
+        }
+
+        setSessions((previous) =>
+          previous.map((session) =>
+            session.id === sessionId
+              ? {
+                  ...session,
+                  status: "cancelled",
+                  progressMessage: "Cancelled by user",
+                }
+              : session,
+          ),
+        );
+
+        if (sessionId === activeSessionId) {
+          handleFinished("cancelled");
+        }
+
+        toast.success("Generation stopped");
+        void loadSessions();
+      } finally {
+        setCancellingSessionId(null);
+      }
+    },
+    [activeSessionId, handleFinished, loadSessions],
+  );
+
   useEffect(() => {
     void loadSessions();
   }, [loadSessions]);
@@ -301,6 +339,8 @@ export function ConsoleApp() {
         void loadSessions();
       }}
       onDeleteSession={(sessionId) => void handleDeleteSession(sessionId)}
+      onCancelSession={(sessionId) => void handleCancelSession(sessionId)}
+      cancellingSessionId={cancellingSessionId}
       onClipReady={handleClipReady}
       onClipUpdated={handleClipUpdated}
       onClipCreated={handleClipCreated}

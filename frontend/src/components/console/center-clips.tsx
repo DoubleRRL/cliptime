@@ -14,6 +14,7 @@ import {
 } from "@/components/console/use-clip-grid-layout";
 import type { TaskProgressState } from "@/hooks/use-task-progress";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
 import { CornerOrbitLoader } from "@/components/corner-orbit-loader";
 import { fadeUp, staggerChildren } from "@/lib/motion";
 import { formatLlmModel } from "@/lib/format-llm-model";
@@ -30,6 +31,8 @@ type CenterClipsProps = {
   regeneratingClipId?: string | null;
   onSelectClip: (id: string) => void;
   onClipReady?: (clip: Record<string, unknown>) => void;
+  onCancelSession?: () => void;
+  isCancelling?: boolean;
 };
 
 const ACTIVE_STATUSES = new Set(["queued", "processing"]);
@@ -60,6 +63,8 @@ export function CenterClips({
   regeneratingClipId = null,
   onSelectClip,
   onClipReady,
+  onCancelSession,
+  isCancelling = false,
 }: CenterClipsProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(DEFAULT_CLIP_ZOOM);
@@ -143,6 +148,18 @@ export function CenterClips({
                 value={progress.progress}
                 className="h-1.5 bg-[var(--console-border)] [&>div]:bg-[var(--console-terracotta)] [&>div]:transition-all"
               />
+              {onCancelSession ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-[var(--console-border)] text-[var(--console-text-muted)] hover:text-[var(--console-text)]"
+                  disabled={isCancelling}
+                  onClick={onCancelSession}
+                >
+                  {isCancelling ? "Stopping…" : "Stop generation"}
+                </Button>
+              ) : null}
               {progress.activityLog.length > 0 && (
                 <div className="max-h-20 overflow-y-auto rounded-lg border border-[var(--console-border)] bg-[var(--console-rail-bg)] px-3 py-2 text-xs text-[var(--console-text-muted)]">
                   {progress.activityLog.slice(-4).map((line) => (

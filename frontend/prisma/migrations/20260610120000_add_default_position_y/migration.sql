@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "default_position_y" DOUBLE PRECISION DEFAULT 0.77;

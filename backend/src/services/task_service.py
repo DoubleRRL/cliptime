@@ -197,11 +197,12 @@ class TaskService:
         output_format: str = "vertical",
         add_subtitles: bool = True,
         highlight_color: str = "#8B5CF6",
-        background_color: str = "#1A1A1ACC",
+        background_color: str | None = "#1A1A1ACC",
         progress_callback: Optional[Callable] = None,
         should_cancel: Optional[Callable] = None,
         clip_ready_callback: Optional[Callable] = None,
         cleanup_settings: Dict[str, Any] | None = None,
+        position_y: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Process a task: download video, analyze, create clips.
@@ -356,6 +357,7 @@ class TaskService:
                         highlight_color,
                         background_color,
                         processing_mode,
+                        position_y=position_y,
                     )
                     return index, clip_info, False
 

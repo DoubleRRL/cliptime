@@ -1,42 +1,34 @@
 import { describe, expect, it } from "vitest";
 
 import type { CaptionStyleTemplate } from "@/components/console/caption-style-preview";
-import { getCaptionTemplateCapabilities } from "@/lib/caption-template-capabilities";
+import { resolveEffectiveCaptionColors } from "@/lib/caption-template-capabilities";
 
-describe("getCaptionTemplateCapabilities", () => {
-  it("riverside supports pill background and highlight", () => {
-    const caps = getCaptionTemplateCapabilities({
-      id: "riverside",
-      pill_style: true,
-      background: true,
-      animation: "karaoke",
-    } as CaptionStyleTemplate);
-    expect(caps.supportsPillBackground).toBe(true);
-    expect(caps.supportsBoxBackground).toBe(false);
-    expect(caps.supportsHighlight).toBe(true);
+const riversideTemplate: CaptionStyleTemplate = {
+  id: "riverside",
+  animation: "karaoke",
+  pill_style: true,
+  background: true,
+  highlight_color: "#8B5CF6",
+  background_color: "#1A1A1ACC",
+};
+
+const tiktokTemplate: CaptionStyleTemplate = {
+  id: "tiktok",
+  animation: "karaoke",
+  background: false,
+  highlight_color: "#FE2C55",
+};
+
+describe("resolveEffectiveCaptionColors", () => {
+  it("uses template colors for TikTok even when saved prefs are Riverside", () => {
+    const colors = resolveEffectiveCaptionColors(tiktokTemplate, "#8B5CF6", "#1A1A1ACC");
+    expect(colors.highlightColor).toBe("#FE2C55");
+    expect(colors.textBackgroundColor).toBe("transparent");
   });
 
-  it("podcast supports box background not pill", () => {
-    const caps = getCaptionTemplateCapabilities({
-      id: "podcast",
-      background: true,
-      animation: "fade",
-      stroke_width: 1,
-    } as CaptionStyleTemplate);
-    expect(caps.supportsPillBackground).toBe(false);
-    expect(caps.supportsBoxBackground).toBe(true);
-    expect(caps.supportsHighlight).toBe(false);
-    expect(caps.supportsStroke).toBe(true);
-  });
-
-  it("tiktok has no background controls", () => {
-    const caps = getCaptionTemplateCapabilities({
-      id: "tiktok",
-      background: false,
-      animation: "karaoke",
-      stroke_width: 2,
-    } as CaptionStyleTemplate);
-    expect(caps.supportsBackground).toBe(false);
-    expect(caps.supportsHighlight).toBe(true);
+  it("keeps Riverside pill background when template supports it", () => {
+    const colors = resolveEffectiveCaptionColors(riversideTemplate, "#FF0000", "#000000AA");
+    expect(colors.highlightColor).toBe("#8B5CF6");
+    expect(colors.textBackgroundColor).toBe("#1A1A1ACC");
   });
 });

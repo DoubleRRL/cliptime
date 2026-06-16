@@ -34,6 +34,7 @@ describe("/api/preferences", () => {
           default_font_family: "Inter",
           default_font_size: 28,
           default_font_color: "#123456",
+          default_position_y: 0.72,
           default_llm_model: "ollama:llama3.1:8b",
         }),
       },
@@ -49,6 +50,7 @@ describe("/api/preferences", () => {
       highlightColor: "#8B5CF6",
       pillColor: "#1A1A1ACC",
       captionTemplate: "riverside",
+      positionY: 0.72,
       llmModel: "ollama:llama3.1:8b",
     });
   });
@@ -88,6 +90,25 @@ describe("/api/preferences", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
       error: "Invalid llmModel",
+    });
+  });
+
+  it("validates positionY", async () => {
+    vi.mocked(getEffectiveSession).mockResolvedValue({
+      user: { id: "user-1" },
+    } as never);
+
+    const response = await PATCH(
+      new Request("http://localhost/api/preferences", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ positionY: 0.4 }),
+      }) as never,
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Invalid positionY (must be between 0.55 and 0.85)",
     });
   });
 

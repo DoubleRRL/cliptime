@@ -31,6 +31,8 @@ type ConsoleShellProps = {
   onRefresh: () => void;
   onSessionCreated: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onCancelSession?: (sessionId: string) => void;
+  cancellingSessionId?: string | null;
   onClipReady?: (clip: Record<string, unknown>) => void;
   onClipUpdated: (clip: ConsoleClip) => void;
   onClipCreated: (clip: ConsoleClip) => void;
@@ -55,6 +57,8 @@ export function ConsoleShell({
   onRefresh,
   onSessionCreated,
   onDeleteSession,
+  onCancelSession,
+  cancellingSessionId = null,
   onClipReady,
   onClipUpdated,
   onClipCreated,
@@ -160,6 +164,8 @@ export function ConsoleShell({
           onRefresh={onRefresh}
           onSessionCreated={onSessionCreated}
           onDeleteSession={onDeleteSession}
+          onCancelSession={onCancelSession}
+          cancellingSessionId={cancellingSessionId}
           onSelectClip={handleSelectClip}
           regeneratingClipId={regeneratingClipId}
         />
@@ -175,6 +181,12 @@ export function ConsoleShell({
           regeneratingClipId={regeneratingClipId}
           onSelectClip={handleSelectClip}
           onClipReady={onClipReady}
+          onCancelSession={
+            activeSessionId && onCancelSession
+              ? () => onCancelSession(activeSessionId)
+              : undefined
+          }
+          isCancelling={Boolean(activeSessionId && cancellingSessionId === activeSessionId)}
         />
       </div>
 

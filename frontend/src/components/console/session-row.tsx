@@ -1,6 +1,6 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Square, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ConsoleSession } from "@/components/console/types";
 import { formatRelativeTime } from "@/lib/format-relative-time";
@@ -12,7 +12,11 @@ type SessionRowProps = {
   isActive: boolean;
   onSelect: () => void;
   onDelete?: () => void;
+  onCancel?: () => void;
+  isCancelling?: boolean;
 };
+
+const ACTIVE_STATUSES = new Set(["queued", "processing"]);
 
 function statusClass(status: string): string {
   switch (status) {
@@ -28,8 +32,16 @@ function statusClass(status: string): string {
   }
 }
 
-export function SessionRow({ session, isActive, onSelect, onDelete }: SessionRowProps) {
+export function SessionRow({
+  session,
+  isActive,
+  onSelect,
+  onDelete,
+  onCancel,
+  isCancelling = false,
+}: SessionRowProps) {
   const modelLabel = formatLlmModel(session.llmModel);
+  const canCancel = ACTIVE_STATUSES.has(session.status) && Boolean(onCancel);
 
   return (
     <div
@@ -62,6 +74,23 @@ export function SessionRow({ session, isActive, onSelect, onDelete }: SessionRow
           </span>
         </div>
       </button>
+      {canCancel && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="my-1.5 h-7 w-7 shrink-0 text-[var(--console-text-muted)] opacity-0 transition-opacity hover:bg-[var(--console-rail-hover)] hover:text-[var(--console-status-processing)] group-hover:opacity-100"
+          onClick={(event) => {
+            event.stopPropagation();
+            onCancel?.();
+          }}
+          disabled={isCancelling}
+          title="Stop generation"
+          aria-label="Stop generation"
+        >
+          <Square className="h-3 w-3 fill-current" />
+        </Button>
+      )}
       {onDelete && (
         <Button
           type="button"
