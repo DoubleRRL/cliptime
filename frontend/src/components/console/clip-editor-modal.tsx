@@ -27,6 +27,13 @@ import {
   CaptionStylePreview,
   type CaptionStyleTemplate,
 } from "@/components/console/caption-style-preview";
+import {
+  clampPreviewWidth,
+  CLIP_EDITOR_MAX_PREVIEW_WIDTH,
+  DEFAULT_PREVIEW_WIDTH,
+  MIN_PREVIEW_WIDTH,
+  Resizable9By16Frame,
+} from "@/components/console/resizable-9-16-frame";
 import { getClipDisplayTitle } from "@/lib/clip-display-title";
 import { getScoreBadgeClass } from "@/lib/virality-score";
 import {
@@ -63,6 +70,28 @@ const DEFAULT_HIGHLIGHT_COLOR = "#8B5CF6";
 const DEFAULT_TEXT_BACKGROUND_COLOR = "#1A1A1ACC";
 const RERENDER_TOAST_ID = "clip-rerender";
 const STYLE_PREVIEW_STORAGE_KEY = "cliptime:showStylePreview";
+const PREVIEW_WIDTH_STORAGE_KEY = "cliptime:clipEditorPreviewWidth";
+
+function readStoredPreviewWidth(): number {
+  if (typeof window === "undefined") return DEFAULT_PREVIEW_WIDTH;
+  const stored = window.sessionStorage.getItem(PREVIEW_WIDTH_STORAGE_KEY);
+  if (!stored) return DEFAULT_PREVIEW_WIDTH;
+  const parsed = Number(stored);
+  if (Number.isNaN(parsed)) return DEFAULT_PREVIEW_WIDTH;
+  return clampPreviewWidth(parsed, undefined, CLIP_EDITOR_MAX_PREVIEW_WIDTH);
+}
+
+const PREVIEW_HEIGHT_HEADER_ESTIMATE = 280;
+
+function computeEffectivePreviewMaxWidth(containerWidth: number): number {
+  if (typeof window === "undefined") return CLIP_EDITOR_MAX_PREVIEW_WIDTH;
+  const availableHeight = window.innerHeight * 0.9 - PREVIEW_HEIGHT_HEADER_ESTIMATE;
+  const heightBasedMax = Math.floor(Math.max(0, availableHeight) * (9 / 16));
+  return Math.max(
+    MIN_PREVIEW_WIDTH,
+    Math.min(CLIP_EDITOR_MAX_PREVIEW_WIDTH, containerWidth, heightBasedMax || CLIP_EDITOR_MAX_PREVIEW_WIDTH),
+  );
+}
 
 type EditorBaseline = {
   captionTemplate: string;
@@ -188,6 +217,7 @@ export function ClipEditorModal({
   taskApiUrl = "/api/tasks",
 }: ClipEditorModalProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const [startDelta, setStartDelta] = useState(0);
   const [endDelta, setEndDelta] = useState(0);
@@ -208,6 +238,10 @@ export function ClipEditorModal({
   const [error, setError] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [showStylePreview, setShowStylePreview] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(DEFAULT_PREVIEW_WIDTH);
+  const [effectivePreviewMaxWidth, setEffectivePreviewMaxWidth] = useState(
+    CLIP_EDITOR_MAX_PREVIEW_WIDTH,
+  );
   const [isDownloading, setIsDownloading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -221,7 +255,41 @@ export function ClipEditorModal({
     if (typeof window === "undefined") return;
     const stored = window.sessionStorage.getItem(STYLE_PREVIEW_STORAGE_KEY);
     if (stored === "true") setShowStylePreview(true);
+    setPreviewWidth(readStoredPreviewWidth());
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const updateEffectiveMax = () => {
+      const containerWidth = previewContainerRef.current?.clientWidth ?? CLIP_EDITOR_MAX_PREVIEW_WIDTH;
+      const nextMax = computeEffectivePreviewMaxWidth(containerWidth);
+      setEffectivePreviewMaxWidth(nextMax);
+      setPreviewWidth((current) =>
+        current > nextMax
+          ? clampPreviewWidth(current, nextMax, CLIP_EDITOR_MAX_PREVIEW_WIDTH)
+          : current,
+      );
+    };
+
+    updateEffectiveMax();
+    const container = previewContainerRef.current;
+    const observer = container ? new ResizeObserver(updateEffectiveMax) : null;
+    if (container && observer) observer.observe(container);
+    window.addEventListener("resize", updateEffectiveMax);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateEffectiveMax);
+    };
+  }, [open]);
+
+  const handlePreviewWidthChange = useCallback((width: number) => {
+    const clamped = clampPreviewWidth(width, effectivePreviewMaxWidth, CLIP_EDITOR_MAX_PREVIEW_WIDTH);
+    setPreviewWidth(clamped);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(PREVIEW_WIDTH_STORAGE_KEY, String(clamped));
+    }
+  }, [effectivePreviewMaxWidth]);
 
   const handleStylePreviewChange = (checked: boolean) => {
     setShowStylePreview(checked);
@@ -242,6 +310,7 @@ export function ClipEditorModal({
       setTextBackgroundColor("transparent");
     }
     if (defaults.emphasisCallouts != null) setEmphasisCallouts(defaults.emphasisCallouts);
+    else setEmphasisCallouts(true);
   }, []);
 
   const cleanupEventSource = useCallback(() => {
@@ -575,7 +644,7 @@ export function ClipEditorModal({
 
   return (
     <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="console-theme max-h-[90vh] overflow-y-auto border-[var(--console-border)] bg-[var(--console-beige)] text-[var(--console-text)] sm:max-w-3xl">
+      <DialogContent className="console-theme max-h-[90vh] overflow-y-auto border-[var(--console-border)] bg-[var(--console-beige)] text-[var(--console-text)] sm:max-w-4xl">
         {clip && taskId ? (
           <>
             <DialogHeader>
@@ -613,16 +682,27 @@ export function ClipEditorModal({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-6 md:grid-cols-[minmax(0,240px)_1fr]">
-              <div className="mx-auto w-full max-w-[240px]">
-                <div className="relative aspect-[9/16] overflow-hidden rounded-xl bg-black shadow-2xl">
+            <div className="flex flex-col gap-6">
+              <div ref={previewContainerRef} className="w-full">
+                <div className="mb-2 flex justify-end">
+                  <p className="text-[11px] text-[var(--console-text-muted)]">
+                    Drag corner to resize
+                  </p>
+                </div>
+                <Resizable9By16Frame
+                  width={previewWidth}
+                  onWidthChange={handlePreviewWidthChange}
+                  maxWidth={effectivePreviewMaxWidth}
+                  innerClassName="rounded-xl bg-black shadow-2xl"
+                  resizeHandleAriaLabel="Resize clip preview"
+                >
                   {videoSrc ? (
                     <video
                       ref={videoRef}
                       key={videoSrc}
                       src={videoSrc}
                       controls
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-contain"
                       playsInline
                       onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
                     />
@@ -641,6 +721,7 @@ export function ClipEditorModal({
                       template={activeTemplate}
                       positionY={positionY}
                       emphasisCallouts={emphasisCallouts}
+                      frameWidth={previewWidth}
                     />
                   )}
                   {isApplying && (
@@ -648,10 +729,10 @@ export function ClipEditorModal({
                       <Loader2 className="h-8 w-8 animate-spin text-[var(--console-terracotta)]" />
                     </div>
                   )}
-                </div>
+                </Resizable9By16Frame>
               </div>
 
-              <div className="space-y-5">
+              <div className="w-full space-y-5">
                 <div className="space-y-3">
                   <p className="text-xs font-medium uppercase tracking-wider text-[var(--console-text-muted)]">
                     Trim
