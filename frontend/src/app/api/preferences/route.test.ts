@@ -35,6 +35,7 @@ describe("/api/preferences", () => {
           default_font_size: 28,
           default_font_color: "#123456",
           default_position_y: 0.72,
+          default_tight_cuts: true,
           default_llm_model: "ollama:llama3.1:8b",
         }),
       },
@@ -51,6 +52,7 @@ describe("/api/preferences", () => {
       pillColor: "#1A1A1ACC",
       captionTemplate: "riverside",
       positionY: 0.72,
+      tightCuts: true,
       llmModel: "ollama:llama3.1:8b",
     });
   });

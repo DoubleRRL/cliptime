@@ -136,6 +136,7 @@ export function ConsoleApp() {
       fontSize: Number(task.font_size ?? RIVERSIDE_CAPTION_DEFAULTS.fontSize),
       fontColor: String(task.font_color || "#FFFFFF"),
       captionTemplate: String(task.caption_template || "riverside"),
+      tightCuts: task.tight_cuts !== false,
     });
     setClips((previous) => {
       const selectedById = new Map(previous.map((clip) => [clip.id, clip.selected]));

@@ -46,6 +46,7 @@ export async function GET(_: NextRequest) {
         default_pill_color: true,
         default_caption_template: true,
         default_position_y: true,
+        default_tight_cuts: true,
         default_llm_model: true,
       },
     });
@@ -65,6 +66,7 @@ export async function GET(_: NextRequest) {
       pillColor: user.default_pill_color || "#1A1A1ACC",
       captionTemplate: user.default_caption_template || "riverside",
       positionY: user.default_position_y ?? 0.77,
+      tightCuts: user.default_tight_cuts ?? true,
       llmModel: user.default_llm_model || null,
     });
   } catch (error) {
@@ -97,6 +99,7 @@ export async function PATCH(request: NextRequest) {
       pillColor,
       captionTemplate,
       positionY,
+      tightCuts,
       llmModel,
     } = body;
 
@@ -145,6 +148,13 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    if (tightCuts !== undefined && typeof tightCuts !== "boolean") {
+      return NextResponse.json(
+        { error: "Invalid tightCuts" },
+        { status: 400 }
+      );
+    }
+
     if (
       captionTemplate !== undefined &&
       (typeof captionTemplate !== "string" || captionTemplate.length > 50)
@@ -177,6 +187,7 @@ export async function PATCH(request: NextRequest) {
         ...(pillColor !== undefined && { default_pill_color: normalizePillColor(pillColor) }),
         ...(captionTemplate !== undefined && { default_caption_template: captionTemplate }),
         ...(positionY !== undefined && { default_position_y: positionY }),
+        ...(tightCuts !== undefined && { default_tight_cuts: tightCuts }),
         ...(llmModel !== undefined && { default_llm_model: llmModel }),
       },
       select: {
@@ -187,6 +198,7 @@ export async function PATCH(request: NextRequest) {
         default_pill_color: true,
         default_caption_template: true,
         default_position_y: true,
+        default_tight_cuts: true,
         default_llm_model: true,
       },
     });
@@ -199,6 +211,7 @@ export async function PATCH(request: NextRequest) {
       pillColor: updatedUser.default_pill_color || "transparent",
       captionTemplate: updatedUser.default_caption_template,
       positionY: updatedUser.default_position_y ?? 0.77,
+      tightCuts: updatedUser.default_tight_cuts ?? true,
       llmModel: updatedUser.default_llm_model,
     });
   } catch (error) {

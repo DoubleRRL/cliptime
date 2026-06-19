@@ -214,6 +214,7 @@ class VideoService:
         caption_template: str = "default",
         output_format: str = "vertical",
         add_subtitles: bool = True,
+        tight_cuts: bool = True,
     ) -> List[Dict[str, Any]]:
         """
         Create standalone video clips from segments with optional subtitles.
@@ -236,6 +237,7 @@ class VideoService:
             caption_template,
             output_format,
             add_subtitles,
+            tight_cuts,
         )
 
         logger.info(f"Successfully created {len(clips_info)} clips")
@@ -297,6 +299,7 @@ class VideoService:
         position_y: Optional[float] = None,
         emphasis_callouts: bool = True,
         emphasis_words: Optional[list[str]] = None,
+        tight_cuts: bool = True,
     ) -> Optional[Dict[str, Any]]:
         """Render a single clip in the thread pool and return clip_info dict, or None on failure."""
         try:
@@ -368,6 +371,7 @@ class VideoService:
                 position_y=position_y,
                 emphasis_callouts=emphasis_callouts,
                 emphasis_words=resolved_emphasis,
+                tight_cuts=tight_cuts,
             )
 
             if not success:

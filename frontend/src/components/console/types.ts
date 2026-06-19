@@ -3,6 +3,7 @@ export type ConsoleSessionSettings = {
   fontSize: number;
   fontColor: string;
   captionTemplate: string;
+  tightCuts: boolean;
 };
 
 export type ConsoleSession = {

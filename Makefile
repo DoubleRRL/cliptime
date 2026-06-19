@@ -20,6 +20,12 @@ test-e2e:
 
 test-ci: test-backend test-frontend test-e2e
 
+verify-subtitles:
+	cd backend && uv run python scripts/verify_tight_cut_subtitles.py
+
+verify-subtitles-baseline:
+	cd backend && uv run python scripts/verify_tight_cut_subtitles.py --skip-render --video ../uploads/clips/clip_2_1251-1304.mp4
+
 open-uploads:
 	@mkdir -p uploads
 	@open uploads

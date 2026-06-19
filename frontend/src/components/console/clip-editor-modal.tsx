@@ -528,6 +528,7 @@ export function ClipEditorModal({
           position_y: positionY,
           replace: replaceOriginal,
           emphasis_callouts: emphasisCallouts,
+          tight_cuts: sessionSettings?.tightCuts !== false,
         }),
       });
 

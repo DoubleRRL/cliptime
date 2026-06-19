@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/sheet";
 import { Loader2, Upload } from "lucide-react";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ModelSelector } from "@/components/model-selector";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
 import {
@@ -41,6 +42,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
   const [captionOptions, setCaptionOptions] = useState<CaptionTaskOptions>(
     buildCaptionTaskOptions(null),
   );
+  const [tightCuts, setTightCuts] = useState(true);
   const [defaultsStatus, setDefaultsStatus] = useState<DefaultsStatus>("loading");
   const [templateDisplayName, setTemplateDisplayName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -91,10 +93,12 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
               backgroundColor: data.pillColor,
               captionTemplate: data.captionTemplate,
               positionY: data.positionY,
+              tightCuts: data.tightCuts,
             },
             template,
           ),
         );
+        setTightCuts(data?.tightCuts !== false);
         setDefaultsStatus("ready");
       } catch (loadError) {
         console.error("Failed to load session defaults:", loadError);
@@ -114,13 +118,15 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
     setDefaultsStatus("loading");
     setTemplateDisplayName(null);
     setCaptionOptions(buildCaptionTaskOptions(null));
+    setTightCuts(true);
   };
 
   const createTask = async (videoUrl: string) => {
+    const options = { ...captionOptions, tightCuts };
     const response = await fetch("/api/tasks/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildNewSessionCreatePayload(videoUrl, captionOptions, llmModel)),
+      body: JSON.stringify(buildNewSessionCreatePayload(videoUrl, options, llmModel)),
     });
 
     if (!response.ok) {
@@ -182,7 +188,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
       ? "Loading defaults…"
       : defaultsStatus === "error"
         ? "Couldn't load saved defaults — check Settings or retry."
-        : formatNewSessionCaptionSummary(captionOptions, templateDisplayName);
+        : formatNewSessionCaptionSummary({ ...captionOptions, tightCuts }, templateDisplayName);
 
   return (
     <Sheet
@@ -248,6 +254,26 @@ export function NewSessionDialog({ open, onOpenChange, onCreated }: NewSessionDi
           >
             {captionSummary}
           </p>
+
+          <div className="flex items-start gap-2 rounded-lg border border-[var(--console-border)] bg-[var(--console-charcoal)]/40 px-3 py-2.5">
+            <Checkbox
+              id="new-session-tight-cuts"
+              checked={tightCuts}
+              onCheckedChange={(checked) => setTightCuts(checked === true)}
+              disabled={isBusy}
+            />
+            <div className="space-y-0.5">
+              <Label
+                htmlFor="new-session-tight-cuts"
+                className="cursor-pointer text-sm text-[var(--console-text)]"
+              >
+                Tight cuts
+              </Label>
+              <p className="text-[11px] text-[var(--console-text-muted)]">
+                Remove dead silence and filler words so captions match what you hear.
+              </p>
+            </div>
+          </div>
 
           <Button
             type="button"

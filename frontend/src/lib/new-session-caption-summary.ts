@@ -2,12 +2,13 @@ import { baseToBurnedIn } from "@/lib/caption-fit";
 import type { CaptionTaskOptions } from "@/lib/caption-defaults";
 
 export function formatNewSessionCaptionSummary(
-  options: Pick<CaptionTaskOptions, "captionTemplate" | "fontSize" | "positionY">,
+  options: Pick<CaptionTaskOptions, "captionTemplate" | "fontSize" | "positionY" | "tightCuts">,
   templateDisplayName?: string | null,
 ): string {
   const name = templateDisplayName ?? options.captionTemplate;
   const exportPx = baseToBurnedIn(options.fontSize);
-  return `Captions: ${name} · ${exportPx}px · ${Math.round(options.positionY * 100)}% vertical`;
+  const cuts = options.tightCuts ? "Tight cuts on" : "Tight cuts off";
+  return `Captions: ${name} · ${exportPx}px · ${Math.round(options.positionY * 100)}% vertical · ${cuts}`;
 }
 
 export function buildNewSessionCreatePayload(
@@ -28,6 +29,8 @@ export function buildNewSessionCreatePayload(
     },
     caption_template: captionOptions.captionTemplate,
     position_y: captionOptions.positionY,
+    emphasis_callouts: true,
+    tight_cuts: captionOptions.tightCuts,
     processing_mode: process.env.NEXT_PUBLIC_DEFAULT_PROCESSING_MODE || "quality",
     output_format: "vertical",
     add_subtitles: true,

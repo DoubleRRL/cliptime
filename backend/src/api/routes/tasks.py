@@ -167,6 +167,12 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     add_subtitles = data.get("add_subtitles", True)
     if not isinstance(add_subtitles, bool):
         add_subtitles = True
+    emphasis_callouts = data.get("emphasis_callouts", True)
+    if not isinstance(emphasis_callouts, bool):
+        emphasis_callouts = True
+    tight_cuts = data.get("tight_cuts", True)
+    if not isinstance(tight_cuts, bool):
+        tight_cuts = True
 
     llm_model = data.get("llm_model")
     if llm_model is not None:
@@ -228,6 +234,8 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             background_color,
             llm_model=llm_model,
             position_y=position_y,
+            emphasis_callouts=emphasis_callouts,
+            tight_cuts=tight_cuts,
         )
 
         # Save source metadata for resume/retries in environments without sources.url column
@@ -238,6 +246,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
                 "source_type": source_type,
                 "output_format": output_format,
                 "add_subtitles": add_subtitles,
+                "tight_cuts": tight_cuts,
             }),
             ex=60 * 60 * 24 * 7,
         )
@@ -643,6 +652,7 @@ async def re_render_clip(
         background_color = payload.get("background_color", "#1A1A1ACC")
         replace = bool(payload.get("replace", False))
         emphasis_callouts = bool(payload.get("emphasis_callouts", True))
+        tight_cuts = bool(payload.get("tight_cuts", True))
         position_y_raw = payload.get("position_y")
         position_y = float(position_y_raw) if position_y_raw is not None else None
         if position_y is not None:
@@ -676,6 +686,7 @@ async def re_render_clip(
             position_y=position_y,
             replace=replace,
             emphasis_callouts=emphasis_callouts,
+            tight_cuts=tight_cuts,
         )
 
         return JSONResponse(

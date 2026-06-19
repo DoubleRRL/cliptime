@@ -31,6 +31,8 @@ async def process_video_task(
     cleanup_settings: Dict[str, Any] | None = None,
     llm_model: str | None = None,
     position_y: float | None = None,
+    emphasis_callouts: bool = True,
+    tight_cuts: bool = True,
 ) -> Dict[str, Any]:
     """
     Background worker task to process a video.
@@ -102,6 +104,8 @@ async def process_video_task(
                 clip_ready_callback=clip_ready_callback,
                 cleanup_settings=cleanup_settings,
                 position_y=position_y,
+                emphasis_callouts=emphasis_callouts,
+                tight_cuts=tight_cuts,
             )
 
             logger.info(f"Task {task_id} completed successfully")
@@ -214,6 +218,7 @@ async def re_render_clip_task(
     position_y: float | None = None,
     replace: bool = False,
     emphasis_callouts: bool = True,
+    tight_cuts: bool = True,
 ) -> Dict[str, Any]:
     """Background worker task to re-render a clip with updated styling."""
     from ..ai import set_model_override
@@ -249,6 +254,7 @@ async def re_render_clip_task(
                 position_y=position_y,
                 replace=replace,
                 emphasis_callouts=emphasis_callouts,
+                tight_cuts=tight_cuts,
                 progress_callback=progress_callback,
             )
             forked = bool(updated_clip.get("forked", not replace))

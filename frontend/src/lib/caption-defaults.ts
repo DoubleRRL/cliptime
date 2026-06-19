@@ -10,6 +10,7 @@ export const RIVERSIDE_CAPTION_DEFAULTS = {
   backgroundColor: "#1A1A1ACC",
   captionTemplate: "riverside",
   positionY: 0.77,
+  tightCuts: true,
 } as const;
 
 export type CaptionTaskOptions = {
@@ -20,6 +21,7 @@ export type CaptionTaskOptions = {
   backgroundColor: string;
   captionTemplate: string;
   positionY: number;
+  tightCuts: boolean;
 };
 
 export function buildCaptionTaskOptions(
@@ -32,6 +34,7 @@ export function buildCaptionTaskOptions(
     fontColor: prefs?.fontColor ?? RIVERSIDE_CAPTION_DEFAULTS.fontColor,
     captionTemplate: prefs?.captionTemplate ?? RIVERSIDE_CAPTION_DEFAULTS.captionTemplate,
     positionY: prefs?.positionY ?? RIVERSIDE_CAPTION_DEFAULTS.positionY,
+    tightCuts: prefs?.tightCuts ?? RIVERSIDE_CAPTION_DEFAULTS.tightCuts,
   };
 
   if (template) {

@@ -27,7 +27,23 @@ describe("formatNewSessionCaptionSummary", () => {
     );
 
     expect(formatNewSessionCaptionSummary(options, "TikTok")).toBe(
-      "Captions: TikTok · 48px · 75% vertical",
+      "Captions: TikTok · 48px · 75% vertical · Tight cuts on",
+    );
+  });
+
+  it("shows tight cuts off when disabled", () => {
+    const options = buildCaptionTaskOptions(
+      {
+        fontSize: 32,
+        positionY: 0.75,
+        captionTemplate: "tiktok",
+        tightCuts: false,
+      },
+      tiktokTemplate,
+    );
+
+    expect(formatNewSessionCaptionSummary(options, "TikTok")).toBe(
+      "Captions: TikTok · 48px · 75% vertical · Tight cuts off",
     );
   });
 });
@@ -49,6 +65,8 @@ describe("buildNewSessionCreatePayload", () => {
 
     expect(payload.caption_template).toBe("tiktok");
     expect(payload.position_y).toBe(0.75);
+    expect(payload.emphasis_callouts).toBe(true);
+    expect(payload.tight_cuts).toBe(true);
     expect(payload.font_options.font_size).toBe(32);
     expect(payload.font_options.highlight_color).toBe("#FE2C55");
     expect(payload.font_options.background_color).toBeUndefined();

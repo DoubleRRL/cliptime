@@ -90,6 +90,7 @@ class TaskService:
                 "Couldn't load the uploaded video. Re-upload the file and try again."
             ),
             "render_error": "Clip rendering failed. Check worker logs for details.",
+            "clip_render_failed": "Clip rendering failed. Check worker logs for details.",
             "cancelled": "Processing was cancelled.",
         }
         if error_code in messages:
@@ -203,6 +204,8 @@ class TaskService:
         clip_ready_callback: Optional[Callable] = None,
         cleanup_settings: Dict[str, Any] | None = None,
         position_y: Optional[float] = None,
+        emphasis_callouts: bool = True,
+        tight_cuts: bool = True,
     ) -> Dict[str, Any]:
         """
         Process a task: download video, analyze, create clips.
@@ -358,6 +361,8 @@ class TaskService:
                         background_color,
                         processing_mode,
                         position_y=position_y,
+                        emphasis_callouts=emphasis_callouts,
+                        tight_cuts=tight_cuts,
                     )
                     return index, clip_info, False
 
@@ -439,6 +444,11 @@ class TaskService:
 
             clip_ids = [clip_id_by_index[i] for i in sorted(clip_id_by_index)]
 
+            if not clip_ids:
+                raise RuntimeError(
+                    "All clip renders failed — check worker logs for details"
+                )
+
             stage_timings["render_seconds"] = round(
                 perf_counter() - render_start, 3
             )
@@ -496,6 +506,8 @@ class TaskService:
                 error_code = "transcription_error"
             elif "analysis" in message:
                 error_code = "analysis_error"
+            elif "clip render" in message or "all clip renders failed" in message:
+                error_code = "clip_render_failed"
             elif "cancelled" in message:
                 error_code = "cancelled"
 
@@ -570,8 +582,19 @@ class TaskService:
         clips = await self.clip_repo.get_clips_by_task(self.db, task_id)
         task["clips"] = clips
         task["clips_count"] = len(clips)
+        task["tight_cuts"] = await self._get_task_tight_cuts(task_id)
 
         return task
+
+    async def _get_task_tight_cuts(self, task_id: str) -> bool:
+        """Read per-task tight cuts setting from Redis task source metadata."""
+        source_payload = await get_redis().get(f"task_source:{task_id}")
+        if source_payload:
+            parsed = json.loads(source_payload)
+            tight_cuts = parsed.get("tight_cuts", True)
+            if isinstance(tight_cuts, bool):
+                return tight_cuts
+        return True
 
     async def count_user_tasks(self, user_id: str) -> int:
         """Count all tasks for a user."""
@@ -719,6 +742,7 @@ class TaskService:
             for clip in clips
         ]
 
+        tight_cuts = await self._get_task_tight_cuts(task_id)
         clips_info = await self.video_service.create_video_clips(
             video_path,
             segments,
@@ -728,6 +752,7 @@ class TaskService:
             caption_template,
             output_format,
             add_subtitles,
+            tight_cuts=tight_cuts,
         )
 
         existing = await self.clip_repo.get_clips_by_task(self.db, task_id)
@@ -817,6 +842,7 @@ class TaskService:
         position_y: Optional[float] = None,
         replace: bool = False,
         emphasis_callouts: bool = True,
+        tight_cuts: bool = True,
         progress_callback: Optional[Callable] = None,
     ) -> Dict[str, Any]:
         """Re-render a clip from source with adjusted boundaries and style."""
@@ -932,6 +958,7 @@ class TaskService:
             position_y=position_y,
             emphasis_callouts=emphasis_callouts,
             emphasis_words=emphasis_words,
+            tight_cuts=tight_cuts,
         )
         if clip_info is None:
             raise ValueError("Failed to re-render clip")
@@ -1265,6 +1292,7 @@ class TaskService:
             raise ValueError("Select at least one clip format")
 
         transcript, video_path = await self._resolve_task_transcript_and_video(task)
+        tight_cuts = await self._get_task_tight_cuts(task_id)
         match_result = await find_segment_by_user_query(
             transcript,
             query,
@@ -1322,6 +1350,7 @@ class TaskService:
                 caption_template,
                 output_format,
                 add_subtitles,
+                tight_cuts=tight_cuts,
             )
             if clip_info is None:
                 continue

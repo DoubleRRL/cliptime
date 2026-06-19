@@ -144,6 +144,53 @@ def _scaled_template_font_size(template: Dict, video_width: int) -> int:
     return get_scaled_font_size(int(template.get("font_size", 48)), video_width)
 
 
+def resolve_group_font_size(
+    words: List[str],
+    template: Dict,
+    font_path: str,
+    video_width: int,
+    max_width: int,
+) -> int:
+    """Pick one font size for an entire phrase group (full text, last word active)."""
+    if template.get("pill_style") or is_premium_template(template):
+        base_size = _scaled_template_font_size(template, video_width)
+        active_idx = max(0, len(words) - 1)
+        lines = _split_phrase_lines(words, max_per_line=4)
+        line_start = 0
+        for line in lines:
+            lw, _, _, _ = _measure_line(
+                line, active_idx, line_start, template, font_path, base_size
+            )
+            if lw > max_width and base_size > 20:
+                return resolve_group_font_size(
+                    words,
+                    {**template, "font_size": int(base_size * 0.88)},
+                    font_path,
+                    video_width,
+                    max_width,
+                )
+            line_start += len(line)
+        return base_size
+
+    base_size = _scaled_template_font_size(template, video_width)
+    font = _load_font(font_path, base_size)
+    spacing = int(base_size * 0.28)
+    total_w = 0
+    for idx, word in enumerate(words):
+        text = format_word_text(word, template)
+        bbox = font.getbbox(text)
+        total_w += (bbox[2] - bbox[0]) + (spacing if idx < len(words) - 1 else 0)
+    if total_w > max_width and base_size > 24:
+        return resolve_group_font_size(
+            words,
+            {**template, "font_size": int(base_size * 0.85)},
+            font_path,
+            video_width,
+            max_width,
+        )
+    return base_size
+
+
 def render_pill_phrase_image(
     words: List[str],
     active_idx: int,
@@ -151,9 +198,15 @@ def render_pill_phrase_image(
     font_path: str,
     video_width: int,
     max_width: int,
+    *,
+    fixed_base_size: Optional[int] = None,
 ) -> Image.Image:
     """Riverside-style: dark rounded pill, active word highlight fill."""
-    base_size = _scaled_template_font_size(template, video_width)
+    base_size = (
+        fixed_base_size
+        if fixed_base_size is not None
+        else _scaled_template_font_size(template, video_width)
+    )
     pill_rgba = _parse_color(
         template.get("background_color") or "#1A1A1ACC",
         (26, 26, 26, 204),
@@ -171,7 +224,7 @@ def render_pill_phrase_image(
         lw, lh, max_ascent, entries = _measure_line(
             line, active_idx, line_start, template, font_path, base_size
         )
-        if lw > max_width and base_size > 20:
+        if lw > max_width and base_size > 20 and fixed_base_size is None:
             return render_pill_phrase_image(
                 words,
                 active_idx,
@@ -237,14 +290,26 @@ def render_phrase_image(
     font_path: str,
     video_width: int,
     max_width: int,
+    *,
+    fixed_base_size: Optional[int] = None,
 ) -> Image.Image:
     """Render phrase — pill style for premium templates, legacy stroke otherwise."""
     if template.get("pill_style") or is_premium_template(template):
         return render_pill_phrase_image(
-            words, active_idx, template, font_path, video_width, max_width
+            words,
+            active_idx,
+            template,
+            font_path,
+            video_width,
+            max_width,
+            fixed_base_size=fixed_base_size,
         )
 
-    base_size = _scaled_template_font_size(template, video_width)
+    base_size = (
+        fixed_base_size
+        if fixed_base_size is not None
+        else _scaled_template_font_size(template, video_width)
+    )
     font = _load_font(font_path, base_size)
     normal_rgb = _hex_to_rgb(template.get("font_color", "#FFFFFF"))
     highlight_rgb = _hex_to_rgb(template.get("highlight_color", "#FFFF00"))
@@ -263,7 +328,7 @@ def render_phrase_image(
         max_h = max(max_h, h)
         total_w += w + (spacing if idx < len(visible) - 1 else 0)
 
-    if total_w > max_width and base_size > 24:
+    if total_w > max_width and base_size > 24 and fixed_base_size is None:
         return render_phrase_image(
             words,
             active_idx,
@@ -298,6 +363,44 @@ def render_phrase_image(
     return image
 
 
+def _word_layout_y(word: Dict, layout_timeline: Optional[List]) -> float | None:
+    """Layout caption Y for a word using the midpoint of its spoken interval."""
+    if not layout_timeline:
+        return None
+    from .layout_director import caption_position_y_at_time
+
+    start = float(word["start"])
+    end = float(word.get("end") or start)
+    midpoint = (start + end) / 2.0
+    return caption_position_y_at_time(midpoint, layout_timeline)
+
+
+def _iter_phrase_groups(
+    relevant_words: List[Dict],
+    *,
+    words_per_group: int,
+    layout_timeline: Optional[List] = None,
+) -> List[List[Dict]]:
+    """Chunk words into phrase groups, splitting when caption Y mode changes."""
+    if not relevant_words:
+        return []
+
+    groups: List[List[Dict]] = []
+    index = 0
+    while index < len(relevant_words):
+        group = [relevant_words[index]]
+        group_y = _word_layout_y(group[0], layout_timeline)
+        index += 1
+        while index < len(relevant_words) and len(group) < words_per_group:
+            next_y = _word_layout_y(relevant_words[index], layout_timeline)
+            if layout_timeline and next_y != group_y:
+                break
+            group.append(relevant_words[index])
+            index += 1
+        groups.append(group)
+    return groups
+
+
 def create_premium_karaoke_clips(
     relevant_words: List[Dict],
     video_width: int,
@@ -311,19 +414,31 @@ def create_premium_karaoke_clips(
     from moviepy import ImageClip
 
     from .layout_director import caption_position_y_at_time
+    from .video_utils import get_safe_vertical_position
 
     clips = []
     words_per_group = 6
     max_width = int(video_width * 0.88)
     phrase_end_pad = 0.05
 
-    for group_idx in range(0, len(relevant_words), words_per_group):
-        group = relevant_words[group_idx : group_idx + words_per_group]
+    for group in _iter_phrase_groups(
+        relevant_words,
+        words_per_group=words_per_group,
+        layout_timeline=layout_timeline,
+    ):
         if not group:
             continue
 
         raw_words = [w["text"] for w in group]
         phrase_end = float(group[-1]["end"]) + phrase_end_pad
+        group_position_y = (
+            _word_layout_y(group[0], layout_timeline)
+            if layout_timeline
+            else position_y
+        )
+        fixed_base_size = resolve_group_font_size(
+            raw_words, template, font_path, video_width, max_width
+        )
 
         for word_idx, current in enumerate(group):
             word_start = float(current["start"])
@@ -336,8 +451,19 @@ def create_premium_karaoke_clips(
             if duration < 0.05:
                 continue
 
+            word_position_y = (
+                _word_layout_y(current, layout_timeline)
+                if layout_timeline
+                else group_position_y
+            )
             phrase_img = render_phrase_image(
-                raw_words, word_idx, template, font_path, video_width, max_width
+                raw_words,
+                word_idx,
+                template,
+                font_path,
+                video_width,
+                max_width,
+                fixed_base_size=fixed_base_size,
             )
             arr = __import__("numpy").array(phrase_img)
             clip = (
@@ -345,12 +471,9 @@ def create_premium_karaoke_clips(
                 .with_duration(duration)
                 .with_start(word_start)
             )
-            word_position_y = (
-                caption_position_y_at_time(word_start, layout_timeline)
-                if layout_timeline
-                else position_y
+            y_pos = get_safe_vertical_position(
+                video_height, phrase_img.height, word_position_y
             )
-            y_pos = int(video_height * word_position_y - phrase_img.height // 2)
             x_pos = (video_width - phrase_img.width) // 2
             clips.append(clip.with_position((x_pos, y_pos)))
 

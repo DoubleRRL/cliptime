@@ -38,6 +38,7 @@ model User {
   default_pill_color String? @default("#1A1A1ACC") @db.VarChar(9)
   default_caption_template String? @default("riverside") @db.VarChar(50)
   default_position_y Float? @default(0.77)
+  default_tight_cuts Boolean? @default(true)
   default_llm_model String?   @db.VarChar(200)
 
   is_admin             Boolean   @default(false)

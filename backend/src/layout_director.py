@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 from moviepy import CompositeVideoClip, VideoFileClip
@@ -84,6 +84,172 @@ def timeline_to_clip_relative(
         )
         for seg in timeline
     ]
+
+
+def _scale_timeline_to_duration(
+    timeline: List[LayoutSegment],
+    target_duration_ms: int,
+) -> List[LayoutSegment]:
+    """Scale clip-relative layout segments to match encoded span duration."""
+    if target_duration_ms <= 0 or not timeline:
+        return []
+    source_end = max(seg.end_ms for seg in timeline)
+    if source_end <= 0 or source_end == target_duration_ms:
+        return [
+            LayoutSegment(
+                max(0, min(seg.start_ms, target_duration_ms)),
+                max(0, min(seg.end_ms, target_duration_ms)),
+                seg.mode,
+                seg.speaker,
+            )
+            for seg in timeline
+            if seg.end_ms > seg.start_ms
+        ]
+    ratio = target_duration_ms / source_end
+    scaled: List[LayoutSegment] = []
+    for seg in timeline:
+        seg_start = int(seg.start_ms * ratio)
+        seg_end = int(seg.end_ms * ratio)
+        seg_start = max(0, min(seg_start, target_duration_ms))
+        seg_end = max(seg_start, min(seg_end, target_duration_ms))
+        if seg_end <= seg_start:
+            continue
+        scaled.append(
+            LayoutSegment(seg_start, seg_end, seg.mode, seg.speaker)
+        )
+    return scaled
+
+
+def remap_layout_timeline_to_output(
+    span_durations_ms: Sequence[int],
+    span_timelines: Sequence[List[LayoutSegment]],
+) -> List[LayoutSegment]:
+    """Merge per-span clip-relative timelines onto tight-cut output time (ms from 0).
+
+    ``span_durations_ms`` must be encoded output duration per span (not source keep-span ms).
+    """
+    output: List[LayoutSegment] = []
+    offset_ms = 0
+    for span_index, (span_duration, timeline) in enumerate(
+        zip(span_durations_ms, span_timelines)
+    ):
+        if span_duration <= 0:
+            continue
+        if span_duration < DUAL_MIN_MS:
+            speaker = None
+            for seg in timeline:
+                if seg.speaker:
+                    speaker = seg.speaker
+                    break
+            output.append(
+                LayoutSegment(offset_ms, offset_ms + span_duration, "solo", speaker)
+            )
+            offset_ms += span_duration
+            continue
+
+        span_timeline = _scale_timeline_to_duration(list(timeline), span_duration)
+        span_timeline = fill_layout_timeline_gaps(
+            span_timeline,
+            span_duration,
+            default_mode="solo",
+        )
+        if not span_timeline:
+            span_timeline = [
+                LayoutSegment(0, span_duration, "solo"),
+            ]
+
+        if span_index > 0 and output and span_timeline:
+            first = span_timeline[0]
+            if first.mode == "dual" and output[-1].mode == "dual":
+                span_timeline = [
+                    LayoutSegment(0, min(1, span_duration), "solo", first.speaker),
+                    *(
+                        [
+                            LayoutSegment(
+                                max(1, first.start_ms),
+                                first.end_ms,
+                                first.mode,
+                                first.speaker,
+                            )
+                        ]
+                        if first.end_ms > 1
+                        else []
+                    ),
+                    *span_timeline[1:],
+                ]
+                span_timeline = fill_layout_timeline_gaps(
+                    span_timeline,
+                    span_duration,
+                    default_mode="solo",
+                )
+
+        for seg in span_timeline:
+            seg_start = max(0, min(seg.start_ms, span_duration))
+            seg_end = max(seg_start, min(seg.end_ms, span_duration))
+            if seg_end <= seg_start:
+                continue
+            output.append(
+                LayoutSegment(
+                    offset_ms + seg_start,
+                    offset_ms + seg_end,
+                    seg.mode,
+                    seg.speaker,
+                )
+            )
+        offset_ms += span_duration
+    return output
+
+
+def fill_layout_timeline_gaps(
+    timeline: List[LayoutSegment],
+    total_duration_ms: int,
+    *,
+    default_mode: str = "solo",
+) -> List[LayoutSegment]:
+    """Ensure timeline covers ``[0, total_duration_ms)`` with no uncovered ranges."""
+    if total_duration_ms <= 0:
+        return []
+    if not timeline:
+        return [LayoutSegment(0, total_duration_ms, default_mode)]
+
+    sorted_segs = sorted(timeline, key=lambda seg: seg.start_ms)
+    filled: List[LayoutSegment] = []
+    cursor = 0
+    last_mode = default_mode
+    last_speaker: Optional[str] = None
+
+    for seg in sorted_segs:
+        seg_start = max(0, min(seg.start_ms, total_duration_ms))
+        seg_end = max(seg_start, min(seg.end_ms, total_duration_ms))
+        if seg_end <= seg_start:
+            continue
+        if seg_start > cursor:
+            filled.append(
+                LayoutSegment(cursor, seg_start, last_mode, last_speaker)
+            )
+        filled.append(
+            LayoutSegment(seg_start, seg_end, seg.mode, seg.speaker)
+        )
+        cursor = seg_end
+        last_mode = seg.mode
+        last_speaker = seg.speaker
+
+    if cursor < total_duration_ms:
+        filled.append(
+            LayoutSegment(cursor, total_duration_ms, last_mode, last_speaker)
+        )
+
+    if not filled:
+        return [LayoutSegment(0, total_duration_ms, default_mode)]
+
+    merged: List[LayoutSegment] = [filled[0]]
+    for seg in filled[1:]:
+        prev = merged[-1]
+        if seg.mode == prev.mode and seg.speaker == prev.speaker:
+            prev.end_ms = seg.end_ms
+        else:
+            merged.append(seg)
+    return merged
 
 
 def _clamp_ms(value: int, lo: int, hi: int) -> int:

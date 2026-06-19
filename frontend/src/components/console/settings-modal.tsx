@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +56,7 @@ interface UserPreferences {
   pillColor: string;
   captionTemplate: string;
   positionY: number;
+  tightCuts: boolean;
   llmModel: string | null;
 }
 
@@ -87,6 +89,7 @@ export function SettingsModal({
   const [pillColor, setPillColor] = useState(RIVERSIDE_CAPTION_DEFAULTS.backgroundColor);
   const [captionTemplate, setCaptionTemplate] = useState(RIVERSIDE_CAPTION_DEFAULTS.captionTemplate);
   const [positionY, setPositionY] = useState(RIVERSIDE_CAPTION_DEFAULTS.positionY);
+  const [tightCuts, setTightCuts] = useState(true);
   const [llmModel, setLlmModel] = useState<string | null>(null);
   const [availableTemplates, setAvailableTemplates] = useState<CaptionStyleTemplate[]>([]);
   const [availableFonts, setAvailableFonts] = useState<
@@ -208,6 +211,7 @@ export function SettingsModal({
               ? data.positionY
               : RIVERSIDE_CAPTION_DEFAULTS.positionY,
           );
+          setTightCuts(data.tightCuts ?? true);
           setLlmModel(data.llmModel ?? null);
         }
       } catch (loadError) {
@@ -240,6 +244,7 @@ export function SettingsModal({
               : previewColors.textBackgroundColor,
           captionTemplate,
           positionY,
+          tightCuts,
           llmModel,
         }),
       });
@@ -400,6 +405,23 @@ export function SettingsModal({
                     onValueChange={(value) => setPositionY((value[0] ?? 77) / 100)}
                     disabled={isLoading}
                   />
+                </div>
+
+                <div className="flex items-start gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <Checkbox
+                    id="settings-tight-cuts"
+                    checked={tightCuts}
+                    onCheckedChange={(checked) => setTightCuts(checked === true)}
+                    disabled={isLoading}
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="settings-tight-cuts" className="text-sm font-medium">
+                      Tight cuts (default)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Remove long pauses and filler words from new clips. You can override per session.
+                    </p>
+                  </div>
                 </div>
 
                 <SettingsCaptionPreview

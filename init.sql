@@ -24,6 +24,7 @@ CREATE TABLE users (
     default_highlight_color VARCHAR(9) DEFAULT '#8B5CF6',
     default_pill_color VARCHAR(9) DEFAULT '#1A1A1ACC',
     default_position_y REAL DEFAULT 0.77,
+    default_tight_cuts BOOLEAN DEFAULT true,
     default_llm_model VARCHAR(200),
     is_admin BOOLEAN NOT NULL DEFAULT false
 );

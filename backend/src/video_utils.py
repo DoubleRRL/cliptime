@@ -773,12 +773,18 @@ def create_assemblyai_subtitles(
     position_y: Optional[float] = None,
     emphasis_callouts: bool = True,
     emphasis_words: Optional[List[str]] = None,
+    relevant_words: Optional[List[Dict]] = None,
 ) -> List[TextClip]:
     """Create subtitles using AssemblyAI's precise word timing with template support."""
     transcript_data = load_cached_transcript_data(video_path)
 
-    if not transcript_data or not transcript_data.get("words"):
-        logger.warning("No cached transcript data available for subtitles")
+    if relevant_words is None:
+        if not transcript_data or not transcript_data.get("words"):
+            logger.warning("No cached transcript data available for subtitles")
+            return []
+        relevant_words = get_words_in_range(transcript_data, clip_start, clip_end)
+    elif not relevant_words:
+        logger.warning("No words provided for subtitles")
         return []
 
     # Get template settings
@@ -807,9 +813,6 @@ def create_assemblyai_subtitles(
     logger.info(
         f"Creating subtitles with template '{caption_template}', animation: {animation_type}"
     )
-
-    # Get words in range
-    relevant_words = get_words_in_range(transcript_data, clip_start, clip_end)
 
     if not relevant_words:
         logger.warning("No words found in clip timerange")
@@ -1138,6 +1141,111 @@ def prepare_directed_layout(
     )
 
 
+def _riverside_solo_fallback(
+    full_video: VideoFileClip,
+    clip: VideoFileClip,
+    transcript_data: Dict,
+    clip_start_s: float,
+    clip_end_s: float,
+    target_w: int,
+    target_h: int,
+    layout_ctx: DirectedLayoutContext,
+) -> Optional[VideoFileClip]:
+    """Riverside column crop for active speaker when directed layout yields nothing."""
+    from .layout_director import _speaker_at, render_riverside_solo_segment
+
+    if not layout_ctx.riverside_feed or not layout_ctx.panels:
+        return None
+
+    clip_start_ms = int(clip_start_s * 1000)
+    clip_end_ms = int(clip_end_s * 1000)
+    turns = [
+        {
+            "start_ms": int(u.get("start", 0)),
+            "end_ms": int(u.get("end", 0)),
+            "speaker": u.get("speaker"),
+        }
+        for u in (transcript_data.get("utterances") or [])
+        if u.get("start", 0) < clip_end_ms and u.get("end", 0) > clip_start_ms
+    ]
+    mid_ms = (clip_start_ms + clip_end_ms) // 2
+    speaker = _speaker_at(mid_ms, turns)
+    src_w, src_h = full_video.size
+    rendered = render_riverside_solo_segment(
+        full_video,
+        clip_start_s,
+        clip_end_s,
+        speaker,
+        layout_ctx.panels,
+        src_w,
+        src_h,
+        target_w,
+        target_h,
+        seating_map=layout_ctx.seating_map,
+    )
+    if rendered is not None:
+        logger.info("Riverside solo fallback applied for span %.1fs-%.1fs", clip_start_s, clip_end_s)
+    return rendered
+
+
+def _face_centred_fallback(
+    full_video: VideoFileClip,
+    clip: VideoFileClip,
+    clip_start_s: float,
+    clip_end_s: float,
+    target_w: int,
+    target_h: int,
+) -> VideoFileClip:
+    x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
+        full_video, clip_start_s, clip_end_s, target_ratio=9 / 16
+    )
+    fallback = clip.cropped(
+        x1=x_offset,
+        y1=y_offset,
+        x2=x_offset + new_width,
+        y2=y_offset + new_height,
+    )
+    if (fallback.size[0], fallback.size[1]) != (target_w, target_h):
+        fallback = fallback.resized((target_w, target_h))
+    return fallback
+
+
+def _build_rendered_layout_timeline(
+    rendered_entries: List[tuple],
+    crossfade_s: float,
+) -> List:
+    """Build output-relative layout timeline from rendered segment clips."""
+    from .layout_director import LayoutSegment
+
+    rendered_timeline: List[LayoutSegment] = []
+    output_offset_ms = 0
+    crossfade_ms = int(crossfade_s * 1000)
+
+    for index, (rendered, seg) in enumerate(rendered_entries):
+        duration_ms = int(rendered.duration * 1000)
+        if index > 0:
+            duration_ms = max(0, duration_ms - crossfade_ms)
+        if duration_ms <= 0:
+            continue
+        rendered_timeline.append(
+            LayoutSegment(
+                output_offset_ms,
+                output_offset_ms + duration_ms,
+                seg.mode,
+                seg.speaker,
+            )
+        )
+        output_offset_ms += duration_ms
+    return rendered_timeline
+
+
+def _solo_timeline_for_clip(clip: VideoFileClip, speaker: Optional[str] = None) -> List:
+    from .layout_director import LayoutSegment
+
+    duration_ms = max(1, int(clip.duration * 1000))
+    return [LayoutSegment(0, duration_ms, "solo", speaker)]
+
+
 def create_directed_clip(
     full_video: VideoFileClip,
     clip: VideoFileClip,
@@ -1148,9 +1256,10 @@ def create_directed_clip(
     target_h: int,
     video_path: Optional[Path] = None,
     layout_ctx: Optional[DirectedLayoutContext] = None,
-) -> VideoFileClip:
+) -> tuple[VideoFileClip, List]:
     """
-    Return a 9:16 clip with Riverside-style directed layouts.
+    Return a 9:16 clip with Riverside-style directed layouts and a rendered
+    output-relative layout timeline for subtitle placement.
 
     Landscape sources: solo speaker crops plus dual stacked segments during
     reaction/overlap moments. Portrait sources: full-frame pass-through.
@@ -1167,8 +1276,9 @@ def create_directed_clip(
 
     CROSSFADE = 0.1  # seconds
 
+    ctx: Optional[DirectedLayoutContext] = layout_ctx
     try:
-        ctx = layout_ctx or prepare_directed_layout(
+        ctx = ctx or prepare_directed_layout(
             full_video,
             transcript_data,
             clip_start_s,
@@ -1181,7 +1291,7 @@ def create_directed_clip(
         riverside_feed = ctx.riverside_feed
         seating_map = ctx.seating_map
 
-        segments: List[VideoFileClip] = []
+        rendered_entries: List[tuple] = []
         for seg in timeline:
             t_start = seg.start_ms / 1000.0
             t_end = seg.end_ms / 1000.0
@@ -1243,12 +1353,16 @@ def create_directed_clip(
                 )
 
             if rendered is not None:
-                segments.append(rendered)
+                rendered_entries.append((rendered, seg))
 
-        if segments:
+        if rendered_entries:
+            rendered_timeline = _build_rendered_layout_timeline(
+                rendered_entries, CROSSFADE
+            )
+            segments = [entry[0] for entry in rendered_entries]
             if len(segments) == 1:
                 logger.info("Directed layout applied (single segment)")
-                return segments[0]
+                return segments[0], rendered_timeline
             faded: List[VideoFileClip] = [segments[0]]
             for seg_clip in segments[1:]:
                 if seg_clip.duration > CROSSFADE * 2:
@@ -1260,24 +1374,59 @@ def create_directed_clip(
                 len(segments),
                 riverside_feed,
             )
-            return result
+            return result, rendered_timeline
+
+        riverside_fallback = _riverside_solo_fallback(
+            full_video,
+            clip,
+            transcript_data,
+            clip_start_s,
+            clip_end_s,
+            target_w,
+            target_h,
+            ctx,
+        )
+        if riverside_fallback is not None:
+            from .layout_director import _speaker_at
+
+            clip_start_ms = int(clip_start_s * 1000)
+            clip_end_ms = int(clip_end_s * 1000)
+            turns = [
+                {
+                    "start_ms": int(u.get("start", 0)),
+                    "end_ms": int(u.get("end", 0)),
+                    "speaker": u.get("speaker"),
+                }
+                for u in (transcript_data.get("utterances") or [])
+                if u.get("start", 0) < clip_end_ms and u.get("end", 0) > clip_start_ms
+            ]
+            speaker = _speaker_at((clip_start_ms + clip_end_ms) // 2, turns)
+            return riverside_fallback, _solo_timeline_for_clip(
+                riverside_fallback, speaker
+            )
 
     except Exception as exc:
         logger.warning(
-            f"Directed layout failed, falling back to face-centred crop: {exc}"
+            f"Directed layout failed, falling back to alternate crop: {exc}"
         )
+        if ctx is not None:
+            riverside_fallback = _riverside_solo_fallback(
+                full_video,
+                clip,
+                transcript_data,
+                clip_start_s,
+                clip_end_s,
+                target_w,
+                target_h,
+                ctx,
+            )
+            if riverside_fallback is not None:
+                return riverside_fallback, _solo_timeline_for_clip(riverside_fallback)
 
-    # --- Fallback: static face-centred crop ---
-    x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
-        full_video, clip_start_s, clip_end_s, target_ratio=9 / 16
+    fallback = _face_centred_fallback(
+        full_video, clip, clip_start_s, clip_end_s, target_w, target_h
     )
-    fallback = clip.cropped(
-        x1=x_offset, y1=y_offset,
-        x2=x_offset + new_width, y2=y_offset + new_height,
-    )
-    if (fallback.size[0], fallback.size[1]) != (target_w, target_h):
-        fallback = fallback.resized((target_w, target_h))
-    return fallback
+    return fallback, _solo_timeline_for_clip(fallback)
 
 
 def create_speaker_cut_clip(
@@ -1291,7 +1440,7 @@ def create_speaker_cut_clip(
     video_path: Optional[Path] = None,
 ) -> VideoFileClip:
     """Backward-compatible alias for :func:`create_directed_clip`."""
-    return create_directed_clip(
+    clip_out, _timeline = create_directed_clip(
         full_video,
         clip,
         transcript_data,
@@ -1301,6 +1450,7 @@ def create_speaker_cut_clip(
         target_h,
         video_path=video_path,
     )
+    return clip_out
 
 
 EMOJI_KEYWORDS = {
@@ -1413,6 +1563,11 @@ def create_karaoke_subtitles(
 
         group_start = word_group[0]["start"]
         group_end = word_group[-1]["end"]
+        group_position_y = (
+            caption_position_y_at_time(group_start, layout_timeline)
+            if layout_timeline
+            else default_position_y
+        )
 
         # For each word in the group, create a highlighted version
         for word_idx, current_word in enumerate(word_group):
@@ -1464,11 +1619,7 @@ def create_karaoke_subtitles(
                     max_w_height = max(max_w_height, temp_c.size[1] if temp_c.size else 40)
                     temp_c.close()
 
-                position_y = (
-                    caption_position_y_at_time(word_start, layout_timeline)
-                    if layout_timeline
-                    else default_position_y
-                )
+                position_y = group_position_y
                 vertical_position = get_safe_vertical_position(
                     video_height, max_w_height, position_y
                 )
@@ -1846,6 +1997,96 @@ def encoding_quality_for_mode(processing_mode: str) -> str:
     return "high"
 
 
+def _resolve_tight_cut_plan(
+    video_path: Path,
+    start_time: float,
+    end_time: float,
+    tight_cuts: bool,
+    tight_cuts_config: Optional["TightCutsConfig"] = None,
+) -> Tuple[bool, List[Any], List[Dict[str, Any]]]:
+    from .tight_cuts import (
+        TightCutsConfig,
+        compute_keep_spans,
+        get_absolute_words_in_range,
+        should_apply_tight_cuts,
+    )
+
+    cfg = tight_cuts_config or TightCutsConfig(enabled=tight_cuts)
+    if not cfg.enabled:
+        return False, [], []
+
+    transcript_data = load_cached_transcript_data(video_path)
+    if not transcript_data or not transcript_data.get("words"):
+        return False, [], []
+
+    clip_start_ms = int(start_time * 1000)
+    clip_end_ms = int(end_time * 1000)
+    abs_words = get_absolute_words_in_range(transcript_data, start_time, end_time)
+    keep_spans = compute_keep_spans(
+        abs_words,
+        clip_start_ms,
+        clip_end_ms,
+        cfg,
+        utterances=transcript_data.get("utterances"),
+    )
+    if not should_apply_tight_cuts(keep_spans, clip_start_ms, clip_end_ms, cfg):
+        return False, [], []
+
+    return True, keep_spans, abs_words
+
+
+def _process_vertical_span(
+    video: VideoFileClip,
+    transcript_data: Optional[Dict[str, Any]],
+    span_start: float,
+    span_end: float,
+    target_width: int,
+    target_height: int,
+    output_target_w: int,
+    output_target_h: int,
+    video_path: Path,
+    *,
+    use_directed_layout: bool,
+) -> tuple[Any, Optional[List]]:
+    part = video.subclipped(span_start, span_end)
+    rendered_timeline: Optional[List] = None
+    if use_directed_layout and transcript_data and transcript_data.get("utterances"):
+        layout_ctx = prepare_directed_layout(
+            video,
+            transcript_data,
+            span_start,
+            span_end,
+            video_path=video_path,
+        )
+        processed, rendered_timeline = create_directed_clip(
+            video,
+            part,
+            transcript_data,
+            span_start,
+            span_end,
+            target_width,
+            target_height,
+            video_path=video_path,
+            layout_ctx=layout_ctx,
+        )
+    else:
+        x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
+            video, span_start, span_end, target_ratio=9 / 16
+        )
+        processed = part.cropped(
+            x1=x_offset,
+            y1=y_offset,
+            x2=x_offset + new_width,
+            y2=y_offset + new_height,
+        )
+        if (processed.size[0], processed.size[1]) != (target_width, target_height):
+            processed = processed.resized((target_width, target_height))
+
+    if (processed.size[0], processed.size[1]) != (output_target_w, output_target_h):
+        processed = processed.resized((output_target_w, output_target_h))
+    return processed, rendered_timeline
+
+
 def create_optimized_clip(
     video_path: Path,
     start_time: float,
@@ -1863,6 +2104,8 @@ def create_optimized_clip(
     position_y: Optional[float] = None,
     emphasis_callouts: bool = True,
     emphasis_words: Optional[List[str]] = None,
+    tight_cuts: bool = True,
+    tight_cuts_config: Optional[Any] = None,
 ) -> bool:
     """Create clip with optional subtitles. output_format: 'vertical' (9:16) or 'original' (keep source size)."""
     try:
@@ -1912,12 +2155,53 @@ def create_optimized_clip(
             return False
 
         end_time = min(end_time, video.duration)
+        apply_tight_cuts, keep_spans, tight_cut_abs_words = _resolve_tight_cut_plan(
+            video_path,
+            start_time,
+            end_time,
+            tight_cuts,
+            tight_cuts_config,
+        )
+        if apply_tight_cuts:
+            logger.info(
+                "Applying tight cuts: %s spans, output ~%.1fs from %.1fs source",
+                len(keep_spans),
+                sum(span.duration_ms for span in keep_spans) / 1000.0,
+                end_time - start_time,
+            )
+
         clip = video.subclipped(start_time, end_time)
         relative_layout_timeline = None
+        subtitle_words: Optional[List[Dict[str, Any]]] = None
+        clip_start_ms = int(start_time * 1000)
 
         if keep_original:
-            # No face detection, no crop, no resize - use trimmed clip as-is
-            processed_clip = clip
+            if apply_tight_cuts:
+                from moviepy import concatenate_videoclips
+                from .tight_cuts import remap_words_to_output
+
+                parts = [
+                    video.subclipped(span.src_start_ms / 1000.0, span.src_end_ms / 1000.0)
+                    for span in keep_spans
+                ]
+                processed_clip = (
+                    concatenate_videoclips(parts, method="compose")
+                    if len(parts) > 1
+                    else parts[0]
+                )
+                clip = processed_clip
+                span_output_durations_ms = [
+                    max(1, int(part.duration * 1000)) for part in parts
+                ]
+                if tight_cut_abs_words:
+                    subtitle_words = remap_words_to_output(
+                        tight_cut_abs_words,
+                        keep_spans,
+                        clip_start_ms,
+                        span_output_durations_ms,
+                    )
+            else:
+                processed_clip = clip
             target_width = round_to_even(processed_clip.w)
             target_height = round_to_even(processed_clip.h)
             if (target_width, target_height) != (processed_clip.w, processed_clip.h):
@@ -1942,8 +2226,63 @@ def create_optimized_clip(
                 and transcript_data.get("utterances")
             )
 
-            layout_ctx = None
-            if has_speakers:
+            if apply_tight_cuts:
+                from moviepy import concatenate_videoclips
+                from .layout_director import (
+                    fill_layout_timeline_gaps,
+                    remap_layout_timeline_to_output,
+                )
+                from .tight_cuts import remap_words_to_output
+
+                use_directed = has_speakers
+                parts = []
+                span_timelines = []
+                for span in keep_spans:
+                    span_start = span.src_start_ms / 1000.0
+                    span_end = span.src_end_ms / 1000.0
+                    processed, span_timeline = _process_vertical_span(
+                        video,
+                        transcript_data,
+                        span_start,
+                        span_end,
+                        target_width,
+                        target_height,
+                        output_target_w,
+                        output_target_h,
+                        video_path,
+                        use_directed_layout=use_directed,
+                    )
+                    parts.append(processed)
+                    span_timelines.append(span_timeline or [])
+
+                processed_clip = (
+                    concatenate_videoclips(parts, method="compose")
+                    if len(parts) > 1
+                    else parts[0]
+                )
+                clip = processed_clip
+                span_output_durations_ms = [
+                    max(1, int(part.duration * 1000)) for part in parts
+                ]
+                if tight_cut_abs_words:
+                    subtitle_words = remap_words_to_output(
+                        tight_cut_abs_words,
+                        keep_spans,
+                        clip_start_ms,
+                        span_output_durations_ms,
+                    )
+                if use_directed and span_timelines:
+                    relative_layout_timeline = remap_layout_timeline_to_output(
+                        span_output_durations_ms,
+                        span_timelines,
+                    )
+                    relative_layout_timeline = fill_layout_timeline_gaps(
+                        relative_layout_timeline,
+                        int(processed_clip.duration * 1000),
+                    )
+            elif has_speakers:
+                from .layout_director import fill_layout_timeline_gaps
+
                 layout_ctx = prepare_directed_layout(
                     video,
                     transcript_data,
@@ -1951,14 +2290,7 @@ def create_optimized_clip(
                     end_time,
                     video_path=video_path,
                 )
-                from .layout_director import timeline_to_clip_relative
-
-                relative_layout_timeline = timeline_to_clip_relative(
-                    layout_ctx.timeline, layout_ctx.clip_start_ms
-                )
-
-            if has_speakers:
-                processed_clip = create_directed_clip(
+                processed_clip, relative_layout_timeline = create_directed_clip(
                     video,
                     clip,
                     transcript_data,
@@ -1968,6 +2300,10 @@ def create_optimized_clip(
                     target_height,
                     video_path=video_path,
                     layout_ctx=layout_ctx,
+                )
+                relative_layout_timeline = fill_layout_timeline_gaps(
+                    relative_layout_timeline,
+                    int(processed_clip.duration * 1000),
                 )
             else:
                 # Single-speaker or no diarisation: static face-centred crop
@@ -1983,7 +2319,7 @@ def create_optimized_clip(
 
             if (processed_clip.size[0], processed_clip.size[1]) != (output_target_w, output_target_h):
                 processed_clip = processed_clip.resized((output_target_w, output_target_h))
-                target_width, target_height = output_target_w, output_target_h
+            target_width, target_height = output_target_w, output_target_h
 
             cropped_clip = processed_clip
         final_clips = [processed_clip]
@@ -2025,6 +2361,7 @@ def create_optimized_clip(
                 position_y=position_y,
                 emphasis_callouts=emphasis_callouts,
                 emphasis_words=emphasis_words,
+                relevant_words=subtitle_words,
             )
             final_clips.extend(subtitle_clips)
 
@@ -2057,11 +2394,14 @@ def create_optimized_clip(
             from .ass_captions import burn_ass_subtitles, generate_ass_from_words
 
             transcript_data = load_cached_transcript_data(video_path)
-            relevant_words = (
-                get_words_in_range(transcript_data, start_time, end_time)
-                if transcript_data
-                else []
-            )
+            if subtitle_words is not None:
+                relevant_words = subtitle_words
+            else:
+                relevant_words = (
+                    get_words_in_range(transcript_data, start_time, end_time)
+                    if transcript_data
+                    else []
+                )
             effective_template = {
                 **template,
                 "font_size": int(font_size) if font_size else int(template["font_size"]),
@@ -2116,6 +2456,7 @@ def create_clips_from_segments(
     caption_template: str = "default",
     output_format: str = "vertical",
     add_subtitles: bool = True,
+    tight_cuts: bool = True,
 ) -> List[Dict[str, Any]]:
     """Create optimized video clips from segments with template support."""
     logger.info(
@@ -2160,6 +2501,7 @@ def create_clips_from_segments(
                 font_color,
                 caption_template,
                 output_format,
+                tight_cuts=tight_cuts,
             )
 
             if success:
@@ -2315,6 +2657,7 @@ def create_clips_with_transitions(
     caption_template: str = "default",
     output_format: str = "vertical",
     add_subtitles: bool = True,
+    tight_cuts: bool = True,
 ) -> List[Dict[str, Any]]:
     """Create standalone video clips without inter-clip transitions.
 
@@ -2336,6 +2679,7 @@ def create_clips_with_transitions(
         caption_template,
         output_format,
         add_subtitles,
+        tight_cuts,
     )
 
 

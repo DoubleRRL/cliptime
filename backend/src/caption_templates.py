@@ -58,6 +58,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": "#000000AA",
         "animation": "karaoke",
         "shadow": True,
+        "emphasis_callouts": True,
         "position_y": 0.75,
     },
     "mrbeast": {
@@ -73,6 +74,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": None,
         "animation": "pop",
         "shadow": True,
+        "emphasis_callouts": True,
         "position_y": 0.70,
     },
     "minimal": {
@@ -103,6 +105,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": None,
         "animation": "karaoke",
         "shadow": True,
+        "emphasis_callouts": True,
         "position_y": 0.75,
     },
     "neon": {
@@ -118,6 +121,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": None,
         "animation": "karaoke",
         "shadow": True,
+        "emphasis_callouts": True,
         "position_y": 0.75,
     },
     "podcast": {
@@ -175,7 +179,7 @@ def get_template_info() -> list:
             "shadow": template.get("shadow", False),
             "premium": template.get("premium", False),
             "pill_style": template.get("pill_style", False),
-            "emphasis_callouts": template.get("emphasis_callouts", False),
+            "emphasis_callouts": template.get("emphasis_callouts", True),
             "background": template.get("background", False),
         }
         for name, template in CAPTION_TEMPLATES.items()

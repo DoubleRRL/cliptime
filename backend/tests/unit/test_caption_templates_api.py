@@ -8,6 +8,8 @@ def test_get_template_info_includes_background_flag():
     assert templates["riverside"]["pill_style"] is True
     assert templates["podcast"]["background"] is True
     assert templates["tiktok"]["background"] is False
+    assert templates["tiktok"]["emphasis_callouts"] is True
+    assert templates["minimal"]["emphasis_callouts"] is True
 
 
 def _ass_style_line(ass: str) -> str:
